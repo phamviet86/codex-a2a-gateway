@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from . import __version__
 from .models import A2A_STATE_MAP, A2AError, A2ATaskResult
 from .settings import Settings, is_loopback_url
 
@@ -22,13 +23,14 @@ class A2AClient:
             write=10.0,
             pool=5.0,
         )
-        headers = {"A2A-Version": "1.0", "User-Agent": "codex-hermes-a2a-bridge/0.1.1"}
+        headers = {"A2A-Version": "1.0", "User-Agent": f"codex-hermes-a2a-bridge/{__version__}"}
         if settings.token:
             headers["Authorization"] = f"Bearer {settings.token}"
         self._client = httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=False)
         self._card: dict[str, Any] | None = None
         self._rpc_url = settings.endpoint + "/"
         self._tenant = ""
+        self._durable_message_dedup = False
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -92,6 +94,13 @@ class A2AClient:
             raise A2AError("unsafe_agent_card", "Hermes Agent Card changed the loopback host")
         self._rpc_url = candidate.rstrip("/") + "/"
         self._tenant = str((selected or {}).get("tenant") or "")
+        extensions = (card.get("capabilities") or {}).get("extensions") or []
+        self._durable_message_dedup = any(
+            isinstance(item, dict)
+            and item.get("uri") == "urn:hermes-agent:a2a:extension:durable-task-store:v1"
+            and bool((item.get("params") or {}).get("messageIdDeduplication"))
+            for item in extensions
+        )
         self._card = card
         return card
 
@@ -105,6 +114,10 @@ class A2AClient:
     @property
     def tenant(self) -> str:
         return self._tenant
+
+    @property
+    def durable_message_dedup(self) -> bool:
+        return self._durable_message_dedup
 
     def _rpc_body(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if self._tenant and "tenant" not in params:

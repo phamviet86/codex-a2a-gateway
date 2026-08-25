@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import time
 import uuid
@@ -13,6 +14,7 @@ class FakeA2AServer:
         self.tasks: dict[str, dict[str, Any]] = {}
         self.turns: dict[str, int] = {}
         self.method_counts: dict[str, int] = {}
+        self.messages: dict[str, str] = {}
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.httpd.daemon_threads = True
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -31,6 +33,9 @@ class FakeA2AServer:
         self.thread.join(timeout=2)
 
     def _make_task(self, message: dict[str, Any], *, working: bool = False) -> dict[str, Any]:
+        message_id = str(message.get("messageId") or "")
+        if message_id and message_id in self.messages:
+            return self.tasks[self.messages[message_id]]
         context = message.get("contextId") or f"ctx-{uuid.uuid4().hex}"
         task_id = f"task-{uuid.uuid4().hex}"
         self.turns[context] = self.turns.get(context, 0) + 1
@@ -47,6 +52,8 @@ class FakeA2AServer:
             "artifacts": [{"artifactId": "a1", "parts": [{"text": answer}]}],
         }
         self.tasks[task_id] = task
+        if message_id:
+            self.messages[message_id] = task_id
         return task
 
     def _handler(self) -> type[BaseHTTPRequestHandler]:
@@ -75,7 +82,20 @@ class FakeA2AServer:
                             "description": "test server",
                             "url": outer.endpoint + "/",
                             "supportedInterfaces": [{"protocolBinding": "JSONRPC", "url": outer.endpoint + "/"}],
-                            "capabilities": {"streaming": True, "pushNotifications": False},
+                            "capabilities": {
+                                "streaming": True,
+                                "pushNotifications": False,
+                                "extensions": [
+                                    {
+                                        "uri": "urn:hermes-agent:a2a:extension:durable-task-store:v1",
+                                        "required": False,
+                                        "params": {
+                                            "terminalTaskPersistence": True,
+                                            "messageIdDeduplication": True,
+                                        },
+                                    }
+                                ],
+                            },
                         }
                     )
                     return
@@ -95,6 +115,12 @@ class FakeA2AServer:
                     message = params.get("message") or {}
                     text = " ".join(str(p.get("text", "")) for p in message.get("parts") or [])
                     task = outer._make_task(message, working="long" in text or "delayed result" in text)
+                    if "drop before first event" in text and outer.method_counts[method] == 1:
+                        task["status"]["state"] = "TASK_STATE_COMPLETED"
+                        task["artifacts"] = [{"artifactId": "a1", "parts": [{"text": "durable retry result"}]}]
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                        self.connection.close()
+                        return
                     if method == "SendMessage":
                         self._json({"jsonrpc": "2.0", "id": rpc_id, "result": {"task": task}})
                         return

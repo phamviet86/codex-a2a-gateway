@@ -4,7 +4,8 @@
 
 | Version | Security fixes |
 |---|---|
-| 0.1.x | Có |
+| 0.2.x | Có |
+| 0.1.x | Chỉ lỗi nghiêm trọng |
 | < 0.1.0 | Không |
 
 ## Báo cáo lỗ hổng
@@ -15,6 +16,6 @@ Nếu private reporting chưa được bật, liên hệ riêng repository owner
 
 ## Security boundary
 
-V0.1.1 chỉ chấp nhận Hermes endpoint loopback, không follow redirect và không nhận bearer token qua tool arguments. Tuy nhiên bridge lưu kết quả/artifact và một phần lỗi trong SQLite local; các nội dung đó có thể nhạy cảm. Hermes cũng có thể ghi conversation/audit log riêng. Người vận hành chịu trách nhiệm về quyền file, retention và backup.
+V0.2.0 chỉ chấp nhận Hermes endpoint loopback, không follow redirect và không nhận bearer token qua tool arguments. Tuy nhiên bridge và durable Hermes TaskStore lưu kết quả/artifact cùng một phần lỗi trong SQLite local; các nội dung đó có thể nhạy cảm. Hermes cũng có thể ghi conversation/audit log riêng. Người vận hành chịu trách nhiệm về quyền file, retention và backup.
 
 Đây là project độc lập, không phải sản phẩm chính thức hay được hỗ trợ bởi Nous Research/Hermes Agent hoặc OpenAI/Codex.

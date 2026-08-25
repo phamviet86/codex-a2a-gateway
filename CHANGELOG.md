@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-08-26
+
+- Thêm capability negotiation cho Hermes durable TaskStore extension.
+- Retry đúng một lần với cùng `messageId` khi transport đứt hoặc hết absolute timeout trước A2A task ID và Hermes quảng bá scoped durable dedup; không retry với upstream chưa hỗ trợ.
+- Hermes-side patch persist Task/result vào SQLite trước dispatch, giữ terminal task qua restart và deduplicate theo peer/profile/tenant/messageId.
+- Nonterminal task sau gateway restart chuyển thành `TASK_STATE_FAILED` rõ ràng; không tuyên bố resume computation hoặc exactly-once tuyệt đối.
+- Thêm regression tests cho transport drop trước event đầu, no-redispatch, task persistence và adapter restart.
+
 ## 0.1.1 — 2026-08-25
 
 - Chuẩn bị public repository: Apache-2.0, metadata/build exclusions, CI, lint/type/coverage, contribution và security policy, issue/PR templates, sample env và kiểm tra distribution artifacts.

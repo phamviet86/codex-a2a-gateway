@@ -2,7 +2,7 @@
 
 Bridge local để Codex làm “lễ tân”: Codex gọi MCP tools qua stdio, bridge chuyển yêu cầu thành A2A v1.0/JSON-RPC tới Hermes profile `default`, rồi giữ mapping hội thoại/task trong SQLite. Hermes vẫn là “bộ não” thực hiện agent loop, memory, skills, tools và điều phối nội bộ.
 
-Phiên bản hiện tại: **v0.1.1**. Chỉ bind/call endpoint loopback; không có tool đổi model, plugin, cấu hình, update, shell hoặc điều khiển service Hermes.
+Phiên bản hiện tại: **v0.2.0**. Chỉ bind/call endpoint loopback; không có tool đổi model, plugin, cấu hình, update, shell hoặc điều khiển service Hermes.
 
 > **Independent project:** đây là phần mềm cộng đồng độc lập, không phải sản phẩm chính thức, không được bảo trợ và không đại diện cho Nous Research/Hermes Agent hay OpenAI/Codex. Tên thương hiệu chỉ dùng để mô tả khả năng tương tác.
 
@@ -100,6 +100,8 @@ Với tác vụ có side effect, cung cấp `idempotency_key`. Hermes 0.20.5 kh�
 
 Từ v0.1.1, cả ba mode đều dùng `SendStreamingMessage` để nhận A2A task ID ngay ở event đầu. `sync` chỉ chờ inline tối đa 30 giây (hoặc `timeout` nếu nhỏ hơn); stream vẫn sống tới correlation timeout. Với record cũ ở `outcome_unknown` chưa có A2A ID, `hermes_task_get`/`hermes_task_wait` thử `ListTasks(contextId)` trước, rồi mới đọc conversation persistence chính thức của Hermes. Recovery chỉ gắn kết quả khi có đúng một local unresolved task và đúng một remote/disk candidate; trường hợp mơ hồ được giữ nguyên, không resend và không đoán. Disk fallback không có A2A state nên trả warning và coi agent reply đã persist là `completed`.
 
+Từ v0.2.0, khi Hermes quảng bá extension `urn:hermes-agent:a2a:extension:durable-task-store:v1`, bridge được phép retry đúng một lần nếu stream đứt hoặc hết absolute timeout **trước khi nhận A2A task ID**. Retry giữ nguyên `messageId`; Hermes trả task đã persist thay vì dispatch agent lần nữa. Nếu extension không có, policy v0.1.1 vẫn giữ nguyên: không retry mutating send.
+
 ## Kiểm thử và vận hành
 
 ```bash
@@ -115,7 +117,7 @@ Từ v0.1.1, cả ba mode đều dùng `SendStreamingMessage` để nhận A2A t
 
 ## Bảo mật và quyền riêng tư
 
-- V0.1.1 từ chối endpoint và Agent Card URL không phải loopback, không follow redirect và không nhận token qua MCP tool arguments.
+- V0.2.0 từ chối endpoint và Agent Card URL không phải loopback, không follow redirect và không nhận token qua MCP tool arguments.
 - SQLite mặc định nằm ngoài source tree với quyền file `0600`; nó lưu mapping, fingerprint, trạng thái, **kết quả/artifact** và lỗi tối thiểu. Kết quả có thể chứa dữ liệu nhạy cảm, vì vậy cần áp dụng retention/backup phù hợp.
 - Prompt gốc không được bridge persist, nhưng Hermes có thể ghi conversation/audit log riêng. Fallback recovery chỉ đọc thư mục conversation Hermes được cấu hình.
 - MCP server phải được chạy bởi user tin cậy; bảy tool có thể kích hoạt Hermes dùng skills/tools với side effect. Dùng `idempotency_key` và không resend mù khi `outcome_unknown`.
@@ -123,9 +125,9 @@ Từ v0.1.1, cả ba mode đều dùng `SendStreamingMessage` để nhận A2A t
 
 ## Guarantees và giới hạn upstream
 
-Bridge bảo đảm policy loopback, mapping local bền vững, không retry mutating send sau ambiguity và semantics cancel trung thực. Bridge **không** bảo đảm Hermes đã dừng computation, token-level streaming, wire-level idempotency hay task persistence qua Hermes restart.
+Bridge bảo đảm policy loopback, mapping local bền vững, chỉ retry mutating send khi Hermes xác nhận durable `messageId` dedup, và semantics cancel trung thực. Với Hermes đã patch, terminal Task/result sống qua gateway restart. Bridge **không** bảo đảm model/tool computation đang chạy có thể resume sau process crash hay cung cấp token-level streaming.
 
-Hermes 0.20.5 dùng TaskStore in-memory, lifecycle SSE và protocol cancel không abort live turn. Conversation-store recovery của bridge là fallback read-only có điều kiện, không thay thế durable task store của upstream. Các chi tiết đã xác minh nằm trong [Hermes A2A reference](docs/hermes-a2a-reference.md).
+Hermes 0.20.5 upstream nguyên bản dùng TaskStore in-memory, lifecycle SSE và protocol cancel không abort live turn. Deployment v0.2.0 dùng patch durable TaskStore phía Hermes; phần còn lại của các giới hạn upstream vẫn áp dụng. Conversation-store recovery của bridge chỉ là fallback cho Hermes chưa patch. Các chi tiết nằm trong [Hermes A2A reference](docs/hermes-a2a-reference.md).
 
 ## Troubleshooting
 
@@ -147,6 +149,8 @@ Các backup scoped được tạo cạnh file cấu hình với hậu tố `.pre
 
 - [Kế hoạch triển khai v0.1](docs/implementation-plan-v0.1.md)
 - [Báo cáo kiểm thử v0.1](docs/testing-report-v0.1.md)
+- [Báo cáo kiểm thử v0.2](docs/testing-report-v0.2.md)
+- [Hermes durable A2A task extension](docs/hermes-durability-extension.md)
 - [Tham chiếu Hermes A2A v1.0](docs/hermes-a2a-reference.md)
 - [Thiết kế MCP bridge](docs/mcp-bridge-design.md)
 - [CHANGELOG](CHANGELOG.md)

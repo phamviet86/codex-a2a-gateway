@@ -10,6 +10,8 @@ Tài liệu này mô tả **những gì Hermes Agent thực sự hỗ trợ**, k
 
 Khi tài liệu và code khác nhau, phần dưới ưu tiên hành vi của source local `0.20.5`. Những nhận định gắn nhãn **Local 0.20.5** đã được xác minh trực tiếp từ `<HERMES_INSTALL>/plugins/platforms/a2a/{adapter.py,protocol.py,security.py,tools.py,plugin.yaml}`. Đây là mô tả upstream tại snapshot đó, không phải guarantee do bridge cung cấp.
 
+> Cập nhật deployment 2026-08-26: máy phát triển có thêm patch durable TaskStore mô tả tại [Hermes durable A2A task extension](./hermes-durability-extension.md). Các đoạn nói “TaskStore in-memory” bên dưới tiếp tục mô tả **upstream 0.20.5 nguyên bản**; chúng không mô tả deployment đã patch.
+
 ## Tổng quan kiến trúc
 
 Plugin `a2a-platform` có hai chiều độc lập:

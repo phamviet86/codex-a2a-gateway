@@ -5,6 +5,7 @@ import uuid
 from contextlib import suppress
 from typing import Any, Literal, cast
 
+from . import __version__
 from .a2a import A2AClient
 from .models import (
     TERMINAL_STATES,
@@ -45,12 +46,19 @@ class BridgeService:
     @staticmethod
     def _card_summary(card: dict[str, Any]) -> dict[str, Any]:
         caps = card.get("capabilities") or {}
+        extensions = caps.get("extensions") or []
         return {
             "name": card.get("name"),
             "version": card.get("version"),
             "description": card.get("description"),
             "streaming": bool(caps.get("streaming")),
             "push_notifications": bool(caps.get("pushNotifications")),
+            "durable_message_dedup": any(
+                isinstance(item, dict)
+                and item.get("uri") == "urn:hermes-agent:a2a:extension:durable-task-store:v1"
+                and bool((item.get("params") or {}).get("messageIdDeduplication"))
+                for item in extensions
+            ),
             "interfaces": [
                 {"binding": item.get("protocolBinding"), "url": item.get("url")}
                 for item in card.get("supportedInterfaces") or []
@@ -128,7 +136,7 @@ class BridgeService:
             error = exc.as_result()["error"]
         return {
             "ok": error is None,
-            "bridge": {"version": "0.1.1", "transport": "stdio", "state": self.store.counts()},
+            "bridge": {"version": __version__, "transport": "stdio", "state": self.store.counts()},
             "hermes": {
                 "endpoint": self.settings.endpoint,
                 "reachable": error is None,
@@ -240,14 +248,37 @@ class BridgeService:
             return
         try:
             async with self._semaphore:
-                async for event in self.client.stream_message(
-                    message, task.context_id, task.message_id, timeout=timeout
-                ):
-                    parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
-                    if parsed:
-                        self._apply_remote(bridge_task_id, parsed)
-                        if parsed.state in TERMINAL_STATES:
-                            break
+                attempt = 0
+                while True:
+                    try:
+                        async for event in self.client.stream_message(
+                            message, task.context_id, task.message_id, timeout=timeout
+                        ):
+                            parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
+                            if parsed:
+                                self._apply_remote(bridge_task_id, parsed)
+                                if parsed.state in TERMINAL_STATES:
+                                    return
+                        return
+                    except A2AError as exc:
+                        current = self.store.get_task(bridge_task_id)
+                        can_retry = (
+                            attempt == 0
+                            and exc.code in {"a2a_transport_ambiguous", "a2a_timeout"}
+                            and bool(getattr(self.client, "durable_message_dedup", False))
+                            and current is not None
+                            and not current.a2a_task_id
+                        )
+                        if not can_retry:
+                            raise
+                        assert current is not None
+                        attempt += 1
+                        self.store.add_event(
+                            bridge_task_id,
+                            "safe_retry",
+                            current.state,
+                            f"Hermes durable messageId dedup extension after {exc.code}",
+                        )
         except asyncio.CancelledError:
             raise
         except BridgeError as exc:

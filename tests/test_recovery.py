@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codex_hermes_a2a_bridge.core import BridgeService
-from codex_hermes_a2a_bridge.models import TaskRecord, now_iso, request_fingerprint
+from codex_hermes_a2a_bridge.models import A2AError, TaskRecord, now_iso, request_fingerprint
 from codex_hermes_a2a_bridge.settings import Settings
 
 
@@ -60,6 +60,83 @@ async def test_sync_uses_stream_and_completes_after_initial_timeout_without_rese
         assert "delayed result" in completed["result"]
         assert fake_a2a.method_counts.get("SendStreamingMessage") == 1
         assert fake_a2a.method_counts.get("SendMessage", 0) == 0
+    finally:
+        await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_transport_drop_before_task_id_retries_once_with_durable_message_dedup(fake_a2a, tmp_path: Path) -> None:
+    service = BridgeService(
+        Settings(
+            endpoint=fake_a2a.endpoint,
+            state_path=tmp_path / "state.sqlite",
+            conversation_dir=tmp_path / "conversations",
+            correlation_timeout=30,
+        )
+    )
+    try:
+        result = await service.chat(
+            "drop before first event",
+            conversation_key="durable-retry",
+            mode="sync",
+            timeout=5,
+        )
+        assert result["state"] == "completed"
+        assert result["result"] == "durable retry result"
+        assert fake_a2a.method_counts["SendStreamingMessage"] == 2
+        assert len(fake_a2a.tasks) == 1
+        assert fake_a2a.turns[result["context_id"]] == 1
+        events = service.store.list_events(result["bridge_task_id"])
+        assert any(event["event_type"] == "safe_retry" for event in events)
+    finally:
+        await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_timeout_before_task_id_recovers_late_result_without_redispatch(fake_a2a, tmp_path: Path) -> None:
+    service = BridgeService(
+        Settings(
+            endpoint=fake_a2a.endpoint,
+            state_path=tmp_path / "state.sqlite",
+            conversation_dir=tmp_path / "conversations",
+            correlation_timeout=30,
+        )
+    )
+    try:
+        original_stream = service.client.stream_message
+        attempts = 0
+
+        async def timeout_once(message: str, context_id: str, message_id: str, *, timeout: float):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                accepted = fake_a2a._make_task(
+                    {
+                        "messageId": message_id,
+                        "contextId": context_id,
+                        "parts": [{"text": message}],
+                    }
+                )
+                accepted["artifacts"] = [{"artifactId": "a1", "parts": [{"text": "late durable result"}]}]
+                raise A2AError("a2a_timeout", "simulated timeout after durable accept")
+            async for event in original_stream(message, context_id, message_id, timeout=timeout):
+                yield event
+
+        service.client.stream_message = timeout_once  # type: ignore[method-assign]
+        completed = await service.chat(
+            "timeout before first event",
+            conversation_key="durable-timeout",
+            mode="sync",
+            timeout=1,
+        )
+        assert completed["state"] == "completed"
+        assert completed["result"] == "late durable result"
+        assert attempts == 2
+        assert fake_a2a.method_counts["SendStreamingMessage"] == 1
+        assert len(fake_a2a.tasks) == 1
+        assert fake_a2a.turns[completed["context_id"]] == 1
+        events = service.store.list_events(completed["bridge_task_id"])
+        assert any(event["event_type"] == "safe_retry" and "a2a_timeout" in event["message"] for event in events)
     finally:
         await service.aclose()
 

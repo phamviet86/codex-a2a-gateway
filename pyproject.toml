@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codex-hermes-a2a-bridge"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local MCP-to-A2A bridge from Codex to Hermes Agent"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
