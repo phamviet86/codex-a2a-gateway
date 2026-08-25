@@ -3,6 +3,7 @@
 ## 0.1.1 — 2026-08-25
 
 - Chuẩn bị public repository: Apache-2.0, metadata/build exclusions, CI, lint/type/coverage, contribution và security policy, issue/PR templates, sample env và kiểm tra distribution artifacts.
+- Dùng các major release GitHub Actions hiện hành chạy trên Node.js 24 để CI không phụ thuộc runtime Node.js 20 đã deprecated.
 - Loại đường dẫn, task/context ID và operational evidence riêng của máy khỏi tài liệu; làm live-check read-only và rollback không đụng gateway service mặc định.
 - Sửa mất kết quả khi Hermes hoàn tất sau HTTP `ReadTimeout`: `sync` chuyển sang lifecycle SSE và giữ correlation worker lâu hơn initial wait.
 - Thêm recovery `outcome_unknown` bằng A2A `ListTasks(contextId)` mà không resend.
