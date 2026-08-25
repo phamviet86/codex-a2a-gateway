@@ -1,0 +1,25 @@
+name: Feature request
+description: Đề xuất thay đổi có ranh giới và threat model rõ ràng
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Vấn đề người dùng cần giải quyết là gì?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Security and compatibility impact
+      description: Nêu ảnh hưởng tới localhost-only, secrets, idempotency, state hoặc Hermes limitations.
+    validations:
+      required: true

@@ -1,0 +1,40 @@
+name: Bug report
+description: Báo lỗi có thể tái hiện mà không kèm dữ liệu nhạy cảm
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Không đăng token, prompt riêng tư, transcript hoặc SQLite. Lỗ hổng bảo mật phải báo theo SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Bridge version
+      placeholder: 0.1.1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Python, OS và Hermes version; bỏ đường dẫn/tên người dùng.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true

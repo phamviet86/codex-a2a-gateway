@@ -1,0 +1,414 @@
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import threading
+import uuid
+from contextlib import suppress
+from pathlib import Path
+from typing import Any
+
+from .models import (
+    ALLOWED_TRANSITIONS,
+    TERMINAL_STATES,
+    BridgeError,
+    ContextRecord,
+    TaskRecord,
+    now_iso,
+)
+
+SCHEMA_VERSION = 1
+
+
+class Store:
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with suppress(OSError):
+            os.chmod(self.path.parent, 0o700)
+        self._lock = threading.RLock()
+        self._migrate()
+        with suppress(OSError):
+            os.chmod(self.path, 0o600)
+
+    def _connect(self) -> sqlite3.Connection:
+        con = sqlite3.connect(self.path, timeout=10)
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys=ON")
+        con.execute("PRAGMA busy_timeout=5000")
+        return con
+
+    def _migrate(self) -> None:
+        with self._lock, self._connect() as con:
+            con.execute("PRAGMA journal_mode=WAL")
+            con.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS contexts (
+                    context_id TEXT PRIMARY KEY,
+                    conversation_key TEXT NOT NULL,
+                    profile TEXT NOT NULL DEFAULT 'default',
+                    endpoint TEXT NOT NULL,
+                    tenant TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL CHECK(status IN ('open','closed')),
+                    turn_count INTEGER NOT NULL DEFAULT 0,
+                    last_task_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    closed_at TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_context_open_conversation
+                ON contexts(conversation_key, profile) WHERE status='open';
+
+                CREATE TABLE IF NOT EXISTS tasks (
+                    bridge_task_id TEXT PRIMARY KEY,
+                    a2a_task_id TEXT UNIQUE,
+                    context_id TEXT NOT NULL REFERENCES contexts(context_id),
+                    conversation_key TEXT NOT NULL,
+                    profile TEXT NOT NULL DEFAULT 'default',
+                    endpoint TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    request_fingerprint TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    result_text TEXT NOT NULL DEFAULT '',
+                    artifacts_json TEXT NOT NULL DEFAULT '[]',
+                    error_code TEXT,
+                    error_message TEXT,
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    hop_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_task_idempotency
+                ON tasks(idempotency_key) WHERE idempotency_key IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_task_conversation_created
+                ON tasks(conversation_key, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_task_state_created
+                ON tasks(state, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    bridge_task_id TEXT NOT NULL REFERENCES tasks(bridge_task_id) ON DELETE CASCADE,
+                    event_type TEXT NOT NULL,
+                    state TEXT,
+                    message TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_events_task_id ON events(bridge_task_id, id);
+                """
+            )
+            con.execute(
+                "INSERT INTO meta(key,value) VALUES('schema_version',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(SCHEMA_VERSION),),
+            )
+
+    @staticmethod
+    def _context(row: sqlite3.Row | None) -> ContextRecord | None:
+        return ContextRecord.model_validate(dict(row)) if row else None
+
+    @staticmethod
+    def _task(row: sqlite3.Row | None) -> TaskRecord | None:
+        if not row:
+            return None
+        data = dict(row)
+        data["artifacts"] = json.loads(data.pop("artifacts_json") or "[]")
+        data["cancel_requested"] = bool(data["cancel_requested"])
+        return TaskRecord.model_validate(data)
+
+    def get_context(
+        self, *, context_id: str | None = None, conversation_key: str | None = None
+    ) -> ContextRecord | None:
+        if not context_id and not conversation_key:
+            return None
+        with self._lock, self._connect() as con:
+            if context_id:
+                row = con.execute("SELECT * FROM contexts WHERE context_id=?", (context_id,)).fetchone()
+            else:
+                row = con.execute(
+                    "SELECT * FROM contexts WHERE conversation_key=? AND profile='default' AND status='open' "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (conversation_key,),
+                ).fetchone()
+        return self._context(row)
+
+    def get_or_create_context(
+        self,
+        *,
+        conversation_key: str,
+        endpoint: str,
+        context_id: str | None = None,
+        profile: str = "default",
+        tenant: str = "",
+    ) -> ContextRecord:
+        now = now_iso()
+        with self._lock, self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            existing = con.execute(
+                "SELECT * FROM contexts WHERE conversation_key=? AND profile=? AND status='open'",
+                (conversation_key, profile),
+            ).fetchone()
+            if existing:
+                rec = self._context(existing)
+                assert rec is not None
+                if context_id and rec.context_id != context_id:
+                    raise BridgeError("context_conflict", "conversation_key is already bound to another open context")
+                if rec.endpoint != endpoint or rec.tenant != tenant:
+                    raise BridgeError("routing_conflict", "existing context is bound to a different Hermes route")
+                return rec
+            chosen_id = context_id or f"codex-{uuid.uuid4().hex}"
+            row = con.execute("SELECT * FROM contexts WHERE context_id=?", (chosen_id,)).fetchone()
+            if row:
+                rec = self._context(row)
+                assert rec is not None
+                if rec.status != "open" or rec.conversation_key != conversation_key:
+                    raise BridgeError("context_conflict", "context_id belongs to another or closed mapping")
+                return rec
+            con.execute(
+                "INSERT INTO contexts("
+                "context_id,conversation_key,profile,endpoint,tenant,status,turn_count,created_at,updated_at"
+                ") "
+                "VALUES(?,?,?,?,?,'open',0,?,?)",
+                (chosen_id, conversation_key, profile, endpoint, tenant, now, now),
+            )
+            row = con.execute("SELECT * FROM contexts WHERE context_id=?", (chosen_id,)).fetchone()
+        rec = self._context(row)
+        assert rec is not None
+        return rec
+
+    def increment_turn(self, context_id: str, max_turns: int) -> ContextRecord:
+        now = now_iso()
+        with self._lock, self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM contexts WHERE context_id=?", (context_id,)).fetchone()
+            rec = self._context(row)
+            if not rec or rec.status != "open":
+                raise BridgeError("context_not_open", "context is missing or closed")
+            if rec.turn_count >= max_turns:
+                raise BridgeError(
+                    "turn_budget_exceeded",
+                    f"context reached the v0.1 turn budget ({max_turns}); close it and start a new conversation",
+                )
+            con.execute(
+                "UPDATE contexts SET turn_count=turn_count+1,updated_at=? WHERE context_id=?",
+                (now, context_id),
+            )
+            row = con.execute("SELECT * FROM contexts WHERE context_id=?", (context_id,)).fetchone()
+        out = self._context(row)
+        assert out is not None
+        return out
+
+    def set_context_last_task(self, context_id: str, bridge_task_id: str) -> None:
+        with self._lock, self._connect() as con:
+            con.execute(
+                "UPDATE contexts SET last_task_id=?,updated_at=? WHERE context_id=?",
+                (bridge_task_id, now_iso(), context_id),
+            )
+
+    def list_contexts(self, limit: int = 20, *, conversation_key: str | None = None) -> list[ContextRecord]:
+        limit = max(1, min(limit, 100))
+        sql = "SELECT * FROM contexts"
+        params: list[Any] = []
+        if conversation_key:
+            sql += " WHERE conversation_key=?"
+            params.append(conversation_key)
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock, self._connect() as con:
+            rows = con.execute(sql, params).fetchall()
+        return [self._context(row) for row in rows if row is not None]  # type: ignore[misc]
+
+    def close_context(self, *, context_id: str | None = None, conversation_key: str | None = None) -> ContextRecord:
+        rec = self.get_context(context_id=context_id, conversation_key=conversation_key)
+        if not rec:
+            raise BridgeError("context_not_found", "context mapping not found")
+        if rec.status == "closed":
+            return rec
+        now = now_iso()
+        with self._lock, self._connect() as con:
+            con.execute(
+                "UPDATE contexts SET status='closed',closed_at=?,updated_at=? WHERE context_id=?",
+                (now, now, rec.context_id),
+            )
+        out = self.get_context(context_id=rec.context_id)
+        assert out is not None
+        return out
+
+    def create_task(self, task: TaskRecord) -> TaskRecord:
+        with self._lock, self._connect() as con:
+            try:
+                con.execute(
+                    """
+                    INSERT INTO tasks(
+                        bridge_task_id,a2a_task_id,context_id,conversation_key,profile,endpoint,
+                        request_id,message_id,idempotency_key,request_fingerprint,mode,state,
+                        result_text,artifacts_json,error_code,error_message,cancel_requested,hop_count,
+                        created_at,updated_at,completed_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        task.bridge_task_id,
+                        task.a2a_task_id,
+                        task.context_id,
+                        task.conversation_key,
+                        task.profile,
+                        task.endpoint,
+                        task.request_id,
+                        task.message_id,
+                        task.idempotency_key,
+                        task.request_fingerprint,
+                        task.mode,
+                        task.state,
+                        task.result_text,
+                        json.dumps(task.artifacts, ensure_ascii=False),
+                        task.error_code,
+                        task.error_message,
+                        int(task.cancel_requested),
+                        task.hop_count,
+                        task.created_at,
+                        task.updated_at,
+                        task.completed_at,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise BridgeError("task_conflict", "task or idempotency key already exists") from exc
+        self.add_event(task.bridge_task_id, "created", task.state)
+        self.set_context_last_task(task.context_id, task.bridge_task_id)
+        return task
+
+    def get_task(self, task_id: str) -> TaskRecord | None:
+        with self._lock, self._connect() as con:
+            row = con.execute(
+                "SELECT * FROM tasks WHERE bridge_task_id=? OR a2a_task_id=? LIMIT 1",
+                (task_id, task_id),
+            ).fetchone()
+        return self._task(row)
+
+    def get_task_by_idempotency(self, key: str) -> TaskRecord | None:
+        with self._lock, self._connect() as con:
+            row = con.execute("SELECT * FROM tasks WHERE idempotency_key=?", (key,)).fetchone()
+        return self._task(row)
+
+    def update_task(
+        self,
+        bridge_task_id: str,
+        *,
+        state: str | None = None,
+        a2a_task_id: str | None = None,
+        result_text: str | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        cancel_requested: bool | None = None,
+    ) -> TaskRecord:
+        current = self.get_task(bridge_task_id)
+        if not current:
+            raise BridgeError("task_not_found", "bridge task not found")
+        target_state = state or current.state
+        if state and state != current.state:
+            if current.state in TERMINAL_STATES:
+                return current
+            allowed = ALLOWED_TRANSITIONS.get(current.state, set())
+            if state not in allowed:
+                raise BridgeError("invalid_state_transition", f"cannot transition {current.state} -> {state}")
+        now = now_iso()
+        completed_at = current.completed_at
+        if target_state in TERMINAL_STATES and not completed_at:
+            completed_at = now
+        values = {
+            "state": target_state,
+            "a2a_task_id": a2a_task_id if a2a_task_id is not None else current.a2a_task_id,
+            "result_text": result_text if result_text is not None else current.result_text,
+            "artifacts_json": json.dumps(artifacts if artifacts is not None else current.artifacts, ensure_ascii=False),
+            "error_code": error_code if error_code is not None else current.error_code,
+            "error_message": error_message if error_message is not None else current.error_message,
+            "cancel_requested": int(cancel_requested if cancel_requested is not None else current.cancel_requested),
+            "updated_at": now,
+            "completed_at": completed_at,
+        }
+        with self._lock, self._connect() as con:
+            con.execute(
+                """
+                UPDATE tasks SET state=:state,a2a_task_id=:a2a_task_id,result_text=:result_text,
+                    artifacts_json=:artifacts_json,error_code=:error_code,error_message=:error_message,
+                    cancel_requested=:cancel_requested,updated_at=:updated_at,completed_at=:completed_at
+                WHERE bridge_task_id=:bridge_task_id
+                """,
+                {**values, "bridge_task_id": current.bridge_task_id},
+            )
+        if state and state != current.state:
+            self.add_event(current.bridge_task_id, "state", state, result_text or error_message or "")
+        out = self.get_task(current.bridge_task_id)
+        assert out is not None
+        return out
+
+    def list_tasks(
+        self,
+        *,
+        conversation_key: str | None = None,
+        context_id: str | None = None,
+        state: str | None = None,
+        limit: int = 20,
+    ) -> list[TaskRecord]:
+        limit = max(1, min(limit, 100))
+        clauses: list[str] = []
+        params: list[Any] = []
+        if conversation_key:
+            clauses.append("conversation_key=?")
+            params.append(conversation_key)
+        if context_id:
+            clauses.append("context_id=?")
+            params.append(context_id)
+        if state:
+            clauses.append("state=?")
+            params.append(state)
+        sql = "SELECT * FROM tasks"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock, self._connect() as con:
+            rows = con.execute(sql, params).fetchall()
+        return [self._task(row) for row in rows if row is not None]  # type: ignore[misc]
+
+    def add_event(self, bridge_task_id: str, event_type: str, state: str | None = None, message: str = "") -> None:
+        message = (message or "")[:500]
+        with self._lock, self._connect() as con:
+            con.execute(
+                "INSERT INTO events(bridge_task_id,event_type,state,message,created_at) VALUES(?,?,?,?,?)",
+                (bridge_task_id, event_type, state, message, now_iso()),
+            )
+            con.execute(
+                "DELETE FROM events WHERE bridge_task_id=? AND id NOT IN "
+                "(SELECT id FROM events WHERE bridge_task_id=? ORDER BY id DESC LIMIT 100)",
+                (bridge_task_id, bridge_task_id),
+            )
+
+    def list_events(self, bridge_task_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        with self._lock, self._connect() as con:
+            rows = con.execute(
+                "SELECT event_type,state,message,created_at FROM events WHERE bridge_task_id=? "
+                "ORDER BY id DESC LIMIT ?",
+                (bridge_task_id, max(1, min(limit, 100))),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    def counts(self) -> dict[str, int]:
+        with self._lock, self._connect() as con:
+            contexts = con.execute("SELECT COUNT(*) FROM contexts").fetchone()[0]
+            tasks = con.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            active = con.execute(
+                "SELECT COUNT(*) FROM tasks WHERE state IN ('queued','submitted','working','outcome_unknown')"
+            ).fetchone()[0]
+        return {"contexts": contexts, "tasks": tasks, "active_tasks": active}
