@@ -3,17 +3,17 @@ requires = ["hatchling>=1.26,<1.28"]
 build-backend = "hatchling.build"
 
 [project]
-name = "codex-hermes-a2a-bridge"
+name = "codex-a2a-gateway"
 version = "0.2.0"
-description = "Bidirectional local bridge between Codex, MCP, and A2A v1.0 peers"
+description = "Bidirectional A2A v1.0 gateway for Codex with MCP and App Server adapters"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{name = "Codex Hermes A2A Bridge contributors"}]
+authors = [{name = "Codex A2A Gateway contributors"}]
 keywords = ["a2a", "codex", "hermes-agent", "mcp"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
@@ -28,6 +28,13 @@ dependencies = [
   "uvicorn>=0.52,<1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/phamviet86/codex-a2a-gateway"
+Documentation = "https://github.com/phamviet86/codex-a2a-gateway/tree/main/docs"
+Source = "https://github.com/phamviet86/codex-a2a-gateway"
+Issues = "https://github.com/phamviet86/codex-a2a-gateway/issues"
+Changelog = "https://github.com/phamviet86/codex-a2a-gateway/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<9",
@@ -40,19 +47,22 @@ dev = [
 ]
 
 [project.scripts]
-codex-hermes-a2a-bridge = "codex_hermes_a2a_bridge.cli:main"
+codex-a2a-gateway = "codex_a2a_gateway.cli:main"
+codex-hermes-a2a-bridge = "codex_a2a_gateway.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/codex_hermes_a2a_bridge"]
+packages = ["src/codex_a2a_gateway"]
 
 [tool.hatch.build.targets.sdist]
 include = [
+  "/AGENTS.md",
   "/CHANGELOG.md",
   "/CONTRIBUTING.md",
   "/.editorconfig",
   "/.env.example",
   "/LICENSE",
   "/README.md",
+  "/README.vi.md",
   "/SECURITY.md",
   "/docs",
   "/pyproject.toml",
@@ -78,7 +88,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["codex_hermes_a2a_bridge"]
+source = ["codex_a2a_gateway"]
 
 [tool.coverage.report]
 fail_under = 65

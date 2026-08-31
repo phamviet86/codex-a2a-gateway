@@ -5,7 +5,7 @@
 - [ ] `ruff check .`
 - [ ] `ruff format --check .`
 - [ ] `mypy src`
-- [ ] `pytest --cov=codex_hermes_a2a_bridge`
+- [ ] `pytest --cov=codex_a2a_gateway`
 - [ ] Package build/check if metadata or packaging changed
 
 ## Safety and compatibility

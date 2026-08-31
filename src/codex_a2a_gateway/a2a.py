@@ -22,7 +22,7 @@ class A2AClient:
             write=10.0,
             pool=5.0,
         )
-        headers = {"A2A-Version": "1.0", "User-Agent": "codex-hermes-a2a-bridge/0.2.0"}
+        headers = {"A2A-Version": "1.0", "User-Agent": "codex-a2a-gateway/0.2.0"}
         if settings.token:
             headers["Authorization"] = f"Bearer {settings.token}"
         self._client = httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=False)

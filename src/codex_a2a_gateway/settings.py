@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 def _default_state_path() -> Path:
     root = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
-    return root / "codex-hermes-a2a-bridge" / "state.sqlite3"
+    current = root / "codex-a2a-gateway" / "state.sqlite3"
+    legacy = root / "codex-hermes-a2a-bridge" / "state.sqlite3"
+    return legacy if legacy.is_file() and not current.exists() else current
 
 
 def _default_conversation_dir() -> Path:
@@ -70,14 +72,14 @@ class Settings(BaseModel):
     @classmethod
     def backend_must_be_supported(cls, value: str) -> str:
         if value not in {"app-server", "cli"}:
-            raise ValueError("CODEX_BRIDGE_BACKEND must be app-server or cli")
+            raise ValueError("CODEX_A2A_GATEWAY_BACKEND must be app-server or cli")
         return value
 
     @field_validator("approval_policy")
     @classmethod
     def approval_policy_must_be_supported(cls, value: str) -> str:
         if value not in {"never", "untrusted", "on-request"}:
-            raise ValueError("CODEX_BRIDGE_APPROVAL_POLICY must be never, untrusted, or on-request")
+            raise ValueError("CODEX_A2A_GATEWAY_APPROVAL_POLICY must be never, untrusted, or on-request")
         return value
 
     @field_validator("inbound_host")
@@ -119,36 +121,41 @@ class Settings(BaseModel):
     def from_env(cls) -> Settings:
         values: dict[str, object] = {}
         env_map = {
-            "endpoint": "HERMES_A2A_ENDPOINT",
-            "token": "HERMES_A2A_TOKEN",
-            "state_path": "HERMES_BRIDGE_STATE_PATH",
-            "default_timeout": "HERMES_BRIDGE_DEFAULT_TIMEOUT",
-            "auto_wait": "HERMES_BRIDGE_AUTO_WAIT",
-            "max_message_chars": "HERMES_BRIDGE_MAX_MESSAGE_CHARS",
-            "max_turns": "HERMES_BRIDGE_MAX_TURNS",
-            "max_concurrency": "HERMES_BRIDGE_MAX_CONCURRENCY",
-            "max_pending_tasks": "CODEX_A2A_MAX_PENDING_TASKS",
-            "connect_timeout": "HERMES_BRIDGE_CONNECT_TIMEOUT",
-            "correlation_timeout": "HERMES_BRIDGE_CORRELATION_TIMEOUT",
-            "sync_wait": "HERMES_BRIDGE_SYNC_WAIT",
-            "conversation_dir": "HERMES_A2A_CONVERSATION_DIR",
-            "inbound_host": "CODEX_A2A_HOST",
-            "inbound_port": "CODEX_A2A_PORT",
-            "inbound_public_url": "CODEX_A2A_PUBLIC_URL",
-            "inbound_token": "CODEX_A2A_BEARER_TOKEN",
-            "agent_name": "CODEX_A2A_AGENT_NAME",
-            "backend": "CODEX_BRIDGE_BACKEND",
-            "cli_fallback": "CODEX_BRIDGE_CLI_FALLBACK",
-            "codex_bin": "CODEX_CLI_BIN",
-            "codex_workspace": "CODEX_WORKSPACE_ROOT",
-            "codex_timeout": "CODEX_BRIDGE_CODEX_TIMEOUT",
-            "approval_policy": "CODEX_BRIDGE_APPROVAL_POLICY",
-            "max_request_bytes": "CODEX_A2A_MAX_REQUEST_BYTES",
+            "endpoint": ("HERMES_A2A_ENDPOINT",),
+            "token": ("HERMES_A2A_TOKEN",),
+            "state_path": ("CODEX_A2A_GATEWAY_STATE_PATH", "HERMES_BRIDGE_STATE_PATH"),
+            "default_timeout": ("CODEX_A2A_GATEWAY_DEFAULT_TIMEOUT", "HERMES_BRIDGE_DEFAULT_TIMEOUT"),
+            "auto_wait": ("CODEX_A2A_GATEWAY_AUTO_WAIT", "HERMES_BRIDGE_AUTO_WAIT"),
+            "max_message_chars": ("CODEX_A2A_GATEWAY_MAX_MESSAGE_CHARS", "HERMES_BRIDGE_MAX_MESSAGE_CHARS"),
+            "max_turns": ("CODEX_A2A_GATEWAY_MAX_TURNS", "HERMES_BRIDGE_MAX_TURNS"),
+            "max_concurrency": ("CODEX_A2A_GATEWAY_MAX_CONCURRENCY", "HERMES_BRIDGE_MAX_CONCURRENCY"),
+            "max_pending_tasks": ("CODEX_A2A_MAX_PENDING_TASKS",),
+            "connect_timeout": ("CODEX_A2A_GATEWAY_CONNECT_TIMEOUT", "HERMES_BRIDGE_CONNECT_TIMEOUT"),
+            "correlation_timeout": (
+                "CODEX_A2A_GATEWAY_CORRELATION_TIMEOUT",
+                "HERMES_BRIDGE_CORRELATION_TIMEOUT",
+            ),
+            "sync_wait": ("CODEX_A2A_GATEWAY_SYNC_WAIT", "HERMES_BRIDGE_SYNC_WAIT"),
+            "conversation_dir": ("HERMES_A2A_CONVERSATION_DIR",),
+            "inbound_host": ("CODEX_A2A_HOST",),
+            "inbound_port": ("CODEX_A2A_PORT",),
+            "inbound_public_url": ("CODEX_A2A_PUBLIC_URL",),
+            "inbound_token": ("CODEX_A2A_BEARER_TOKEN",),
+            "agent_name": ("CODEX_A2A_AGENT_NAME",),
+            "backend": ("CODEX_A2A_GATEWAY_BACKEND", "CODEX_BRIDGE_BACKEND"),
+            "cli_fallback": ("CODEX_A2A_GATEWAY_CLI_FALLBACK", "CODEX_BRIDGE_CLI_FALLBACK"),
+            "codex_bin": ("CODEX_CLI_BIN",),
+            "codex_workspace": ("CODEX_WORKSPACE_ROOT",),
+            "codex_timeout": ("CODEX_A2A_GATEWAY_CODEX_TIMEOUT", "CODEX_BRIDGE_CODEX_TIMEOUT"),
+            "approval_policy": ("CODEX_A2A_GATEWAY_APPROVAL_POLICY", "CODEX_BRIDGE_APPROVAL_POLICY"),
+            "max_request_bytes": ("CODEX_A2A_MAX_REQUEST_BYTES",),
         }
-        for field, env_name in env_map.items():
-            raw = os.environ.get(env_name)
-            if raw not in (None, ""):
-                values[field] = raw
+        for field, env_names in env_map.items():
+            for env_name in env_names:
+                raw = os.environ.get(env_name)
+                if raw not in (None, ""):
+                    values[field] = raw
+                    break
         return cls.model_validate(values)
 
     @property

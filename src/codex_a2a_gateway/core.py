@@ -440,7 +440,7 @@ class BridgeService:
             **self._task_result(task),
             "cancel_sent": cancel_sent,
             "computation_stopped": "unknown",
-            "note": "Hermes acknowledged task cancellation; v0.20.5 does not guarantee underlying computation stopped.",
+            "note": "Hermes acknowledged task cancellation; A2A cancellation does not guarantee the live turn stopped.",
         }
 
     async def contexts(

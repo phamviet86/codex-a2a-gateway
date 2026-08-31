@@ -1,5 +1,7 @@
 # Tham chiếu Hermes A2A v1.0
 
+> **Snapshot reference:** phần phân tích chi tiết dưới đây ghi lại source Hermes `0.20.5` tại thời điểm thiết kế v0.1. Hướng dẫn vận hành hiện tại dùng `hermes gateway setup`, `hermes gateway run` và `hermes tools enable a2a --platform <platform>` theo [Hermes A2A guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a). Kiểm thử release v0.2 được thực hiện riêng với Hermes `0.20.6`; xem [testing report v0.2](testing-report-v0.2.md).
+
 ## Phạm vi và thứ tự ưu tiên nguồn
 
 Tài liệu này mô tả **những gì Hermes Agent thực sự hỗ trợ**, không phải toàn bộ chuẩn A2A. Cơ sở kiểm chứng:

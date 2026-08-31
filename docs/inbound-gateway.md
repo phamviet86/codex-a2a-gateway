@@ -4,8 +4,8 @@
 
 ```bash
 export CODEX_WORKSPACE_ROOT=/absolute/path/to/workspace
-export CODEX_BRIDGE_BACKEND=app-server
-.venv/bin/codex-hermes-a2a-bridge gateway
+export CODEX_A2A_GATEWAY_BACKEND=app-server
+.venv/bin/codex-a2a-gateway gateway
 ```
 
 Mặc định chỉ listen `127.0.0.1:9910`. Muốn bind non-loopback phải đặt `CODEX_A2A_BEARER_TOKEN`; validation sẽ fail startup nếu thiếu. Đặt `CODEX_A2A_PUBLIC_URL` khi có reverse proxy. TLS phải terminate ở proxy; không dùng plain HTTP qua mạng không tin cậy.
@@ -29,10 +29,10 @@ Việc tăng turn, ghi `messageId`, tạo/cập nhật task và lifecycle event 
 `cli` là compatibility mode:
 
 ```bash
-CODEX_BRIDGE_BACKEND=cli .venv/bin/codex-hermes-a2a-bridge gateway
+CODEX_A2A_GATEWAY_BACKEND=cli .venv/bin/codex-a2a-gateway gateway
 ```
 
-CLI đọc `codex exec --json` JSONL và dùng `codex exec resume <SESSION_ID>` cho follow-up. Nó không hỗ trợ approval/input-required tương tác và chỉ cancel bằng terminate subprocess. `CODEX_BRIDGE_CLI_FALLBACK=true` cho phép App Server chuyển sang CLI chỉ khi context mới chưa nhận thread id; context App Server đã tồn tại sẽ fail closed để không trộn session semantics.
+CLI đọc `codex exec --json` JSONL và dùng `codex exec resume <SESSION_ID>` cho follow-up. Nó không hỗ trợ approval/input-required tương tác và chỉ cancel bằng terminate subprocess. `CODEX_A2A_GATEWAY_CLI_FALLBACK=true` cho phép App Server chuyển sang CLI chỉ khi context mới chưa nhận thread id; context App Server đã tồn tại sẽ fail closed để không trộn session semantics.
 
 ## Kiểm tra
 
@@ -64,8 +64,8 @@ Contract A2A v1:
 
 - Text parts only, tối đa 32 parts và `CODEX_A2A_MAX_REQUEST_BYTES` mỗi body.
 - Mọi part phải có đúng một content member là `text` và `mediaType` phải là `text/plain` hoặc bỏ trống. Nếu request trộn thêm data/raw/url/file, toàn request bị từ chối trước khi gọi Codex.
-- Turn budget/context dùng `HERMES_BRIDGE_MAX_TURNS` để chặn ping-pong loop.
-- `HERMES_BRIDGE_MAX_CONCURRENCY` giới hạn số turn Codex chạy đồng thời; stream queue được coalescing và có giới hạn.
+- Turn budget/context dùng `CODEX_A2A_GATEWAY_MAX_TURNS` để chặn ping-pong loop.
+- `CODEX_A2A_GATEWAY_MAX_CONCURRENCY` giới hạn số turn Codex chạy đồng thời; stream queue được coalescing và có giới hạn.
 - `CODEX_A2A_MAX_PENDING_TASKS` giới hạn tổng task inbound queued + running; effective cap không thấp hơn concurrency. Khi đầy, request mới nhận `SERVER_OVERLOADED` retryable và không tạo context/task.
 - Push notification CRUD/webhook chưa triển khai.
 - Cancel không chứng minh computation dừng; response metadata luôn `computationStopped: unknown`.

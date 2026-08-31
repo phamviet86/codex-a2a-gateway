@@ -336,7 +336,7 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                 "task_not_found": (-32001, "TASK_NOT_FOUND", "a2a-protocol.org"),
                 "task_not_cancelable": (-32002, "TASK_NOT_CANCELABLE", "a2a-protocol.org"),
                 "unsupported_content": (-32005, "CONTENT_TYPE_NOT_SUPPORTED", "a2a-protocol.org"),
-                "server_overloaded": (-32000, "SERVER_OVERLOADED", "codex-hermes-a2a-bridge"),
+                "server_overloaded": (-32000, "SERVER_OVERLOADED", "codex-a2a-gateway"),
             }
             if exc.code in a2a_errors:
                 rpc_code, reason, domain = a2a_errors[exc.code]
@@ -367,7 +367,7 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                     {
                         "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                         "reason": exc.code.upper(),
-                        "domain": "codex-hermes-a2a-bridge",
+                        "domain": "codex-a2a-gateway",
                     }
                 ]
             return JSONResponse(_rpc_error(request_id, rpc_code, exc.message, details))

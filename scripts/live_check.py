@@ -7,8 +7,8 @@ import argparse
 import asyncio
 import json
 
-from codex_hermes_a2a_bridge.core import BridgeService
-from codex_hermes_a2a_bridge.settings import Settings
+from codex_a2a_gateway.core import BridgeService
+from codex_a2a_gateway.settings import Settings
 
 
 async def check(conversation_key: str) -> int:

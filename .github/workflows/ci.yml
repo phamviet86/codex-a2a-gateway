@@ -28,7 +28,7 @@ jobs:
       - name: Type check
         run: mypy src
       - name: Test with coverage
-        run: pytest --cov=codex_hermes_a2a_bridge --cov-report=term-missing --cov-report=xml
+        run: pytest --cov=codex_a2a_gateway --cov-report=term-missing --cov-report=xml
       - name: Build and validate distributions
         run: |
           python -m build

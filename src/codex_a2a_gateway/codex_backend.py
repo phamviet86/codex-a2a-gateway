@@ -166,7 +166,7 @@ class AppServerBackend(_SubprocessBackend):
                         "method": "initialize",
                         "params": {
                             "clientInfo": {
-                                "name": "codex-hermes-a2a-bridge",
+                                "name": "codex-a2a-gateway",
                                 "title": "Codex A2A Gateway",
                                 "version": "0.2.0",
                             },
@@ -185,7 +185,7 @@ class AppServerBackend(_SubprocessBackend):
                 if thread_id:
                     thread_params["threadId"] = thread_id
                 else:
-                    thread_params["serviceName"] = "codex-hermes-a2a-bridge"
+                    thread_params["serviceName"] = "codex-a2a-gateway"
                 await self._write(process, {"id": 2, "method": thread_method, "params": thread_params})
                 thread_result, interaction = await self._response(process, 2)
                 if interaction:

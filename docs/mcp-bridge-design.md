@@ -1,5 +1,7 @@
 # Thiết kế Codex MCP → Hermes A2A bridge
 
+> **Research record:** tài liệu này mô tả không gian thiết kế và snapshot Hermes v0.1. Contract đang triển khai nằm trong README, `architecture-v0.2.md` và `inbound-gateway.md`.
+
 > Cập nhật triển khai 2026-08-25: v0.1.1 dùng stdio MCP, Python 3.11, SQLite, localhost-only, profile `default` và đúng bảy high-level tools hội thoại/task. Mọi send dùng lifecycle SSE để nhận task ID sớm; `outcome_unknown` được reconcile bằng context-scoped task list/conversation persistence mà không resend. Phần còn lại của tài liệu vẫn là tham chiếu capability đầy đủ; không phải mọi A2A operation bên dưới đều được expose trong v0.1.
 
 ## Trạng thái tài liệu và mục tiêu nghiên cứu

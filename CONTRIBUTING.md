@@ -1,6 +1,6 @@
 # Contributing
 
-Cảm ơn bạn muốn đóng góp. Project đang ở trạng thái alpha và chỉ hỗ trợ Python 3.11, MCP stdio và Hermes A2A trên loopback.
+Cảm ơn bạn muốn đóng góp. Project đang ở trạng thái public beta, dùng Python 3.11, MCP stdio cho outbound Hermes adapter và A2A v1.0 HTTP/SSE cho inbound Codex gateway.
 
 ## Thiết lập phát triển
 
@@ -10,7 +10,7 @@ python3.11 -m venv .venv
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 .venv/bin/mypy src
-.venv/bin/pytest --cov=codex_hermes_a2a_bridge
+.venv/bin/pytest --cov=codex_a2a_gateway
 ```
 
 Không cần Hermes thật để chạy test mặc định: integration suite dùng fake A2A server ở ephemeral loopback port. Live test phải là thao tác chủ động, dùng prompt vô hại và không được chạy trong CI.

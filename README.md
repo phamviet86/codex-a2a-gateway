@@ -1,208 +1,240 @@
-# Codex Hermes A2A Bridge
+# Codex A2A Gateway
 
-Bridge local hai chiều:
+[![CI](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
+[![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
-1. Codex gọi MCP tools qua stdio để giao tiếp với Hermes hoặc peer A2A mặc định hiện có.
-2. Hermes hoặc A2A v1.0 client gọi HTTP gateway; gateway chuyển lượt vào Codex App Server và giữ mapping/task trong SQLite.
+**Public beta · v0.2.0**
 
-Phiên bản hiện tại: **v0.2.0**. Cả outbound endpoint lẫn inbound bind đều loopback mặc định. Inbound chỉ mở rộng ra mạng khi có bearer token qua env.
+English | [Tiếng Việt](README.vi.md)
 
-> **Independent project:** đây là phần mềm cộng đồng độc lập, không phải sản phẩm chính thức, không được bảo trợ và không đại diện cho Nous Research/Hermes Agent hay OpenAI/Codex. Tên thương hiệu chỉ dùng để mô tả khả năng tương tác.
+`codex-a2a-gateway` is a local bidirectional gateway that lets Codex participate in A2A v1.0 workflows even though Codex does not expose a native A2A endpoint.
 
-## Kiến trúc
+- **Codex → A2A:** Codex calls seven MCP stdio tools that delegate to the local Hermes A2A peer.
+- **A2A → Codex:** Hermes or another A2A v1.0 client calls an HTTP/SSE gateway backed by Codex App Server.
+
+Hermes Agent is the first verified peer, not the product boundary. The inbound endpoint uses portable A2A v1.0 operations and can be called by other compliant clients.
+
+> **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
+
+## Architecture
 
 ```text
-Codex client --MCP stdio--> outbound core --> Hermes/default A2A peer :9900
+Codex client --MCP stdio--> outbound adapter --> local Hermes A2A :9900
 A2A v1 client --HTTP/SSE--> inbound gateway --> Codex App Server stdio
                     \--------------------------> SQLite mappings/tasks
 ```
 
-- Python 3.11 và venv riêng, không dùng venv Hermes.
-- MCP SDK Python, Starlette/Uvicorn, `httpx` async, Pydantic và SQLite stdlib.
-- Mỗi `conversation_key` mở được ánh xạ tới Hermes `contextId`; các lượt sau dùng lại ánh xạ đó.
-- Prompt gốc không được persist; bridge lưu fingerprint, route, trạng thái, kết quả và lỗi tối thiểu.
+The MCP server and inbound gateway are separate processes. They share durable SQLite mappings between A2A contexts/tasks and Codex conversations/threads.
 
-## Yêu cầu và cài đặt nhanh
+## Current capabilities
 
-- Python 3.11.
-- Hermes Agent 0.20.5 với A2A gateway chạy trên loopback.
-- Codex client có hỗ trợ MCP stdio.
+- A2A v1 Agent Card and JSON-RPC `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, and `CancelTask`.
+- SSE lifecycle streaming with task, status, and artifact updates.
+- Durable context, task, message, thread, and turn correlation in local SQLite.
+- Local idempotency and conservative recovery after ambiguous outbound timeouts.
+- App Server approval and user-input requests mapped to `TASK_STATE_INPUT_REQUIRED`.
+- Loopback defaults, bearer authentication for non-loopback inbound exposure, request limits, and bounded admission.
+- Explicit CLI compatibility backend using `codex exec --json`.
+
+Known limitations:
+
+- Inbound requests support text parts only.
+- No inbound push-notification CRUD or webhook delivery; the Agent Card advertises `pushNotifications: false`.
+- Streaming uses A2A lifecycle/artifact events; inbound artifact deltas may be incremental, but token boundaries are not guaranteed.
+- Cancellation is best-effort and never proves that upstream computation stopped.
+- Hermes task storage is currently in memory; the gateway uses conservative local recovery after a Hermes restart.
+- One active writer/process set should own a SQLite state file. This is a local single-user integration, not a multi-tenant isolation boundary.
+
+## Compatibility
+
+| Component | Supported/tested |
+|---|---|
+| Python | CPython `>=3.11,<3.12` |
+| A2A | v1.0 JSON-RPC and SSE |
+| Codex | App Server over stdio by default; CLI fallback is explicit |
+| Hermes Agent | Live-tested with `0.20.6` on macOS |
+| MCP | Local stdio server |
+
+The App Server backend follows the official [Codex App Server protocol](https://learn.chatgpt.com/docs/app-server): initialize once, start or resume a thread, start a turn, and consume streamed notifications. WebSocket App Server transport is not used by this project.
+
+## Install
 
 ```bash
-cd /absolute/path/to/codex-hermes-a2a-bridge
+git clone https://github.com/phamviet86/codex-a2a-gateway.git
+cd codex-a2a-gateway
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/codex-hermes-a2a-bridge doctor
+.venv/bin/codex-a2a-gateway --help
 ```
 
-Contributor có thể cài thêm tool kiểm thử bằng `python -m pip install -e '.[dev]'`. Xem [.env.example](.env.example) để biết các override; không commit file `.env` thật.
-
-## Chạy hai process độc lập
-
-MCP outbound giữ command cũ và lifecycle stdio của Codex client:
+Contributors should install development tools with:
 
 ```bash
-.venv/bin/codex-hermes-a2a-bridge serve
+.venv/bin/python -m pip install -e '.[dev]'
 ```
 
-Inbound A2A chạy thành daemon/process riêng, nên task không chết chỉ vì MCP client đóng stdio:
+## Quickstart 1: Codex → Hermes
+
+Enable the native Hermes A2A platform using the current [Hermes A2A guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a):
+
+```bash
+hermes gateway setup   # select A2A when prompted
+hermes gateway run     # foreground process on 127.0.0.1:9900
+```
+
+In another terminal, verify the peer and register the MCP server:
+
+```bash
+.venv/bin/codex-a2a-gateway doctor
+
+codex mcp add codex-a2a-gateway -- \
+  /absolute/path/to/codex-a2a-gateway/.venv/bin/codex-a2a-gateway serve
+codex mcp get codex-a2a-gateway
+```
+
+Restart or open a new Codex client so it loads the MCP entry. A typical agent workflow is:
+
+1. Call `hermes_status`.
+2. Call `hermes_chat` with a stable `conversation_key`.
+3. If the task is still active, call `hermes_task_wait` or `hermes_task_get` instead of resending it.
+4. Continue the conversation with the same `conversation_key` or returned `context_id`.
+
+The MCP stdio process writes protocol frames to stdout and diagnostics to stderr.
+
+## Quickstart 2: Hermes or A2A → Codex
+
+Start the inbound gateway against the workspace Codex should operate on:
 
 ```bash
 CODEX_WORKSPACE_ROOT=/absolute/path/to/workspace \
-  .venv/bin/codex-hermes-a2a-bridge gateway
-curl http://127.0.0.1:9910/.well-known/agent-card.json
+  .venv/bin/codex-a2a-gateway gateway
 ```
 
-Production default là `CODEX_BRIDGE_BACKEND=app-server`, chạy `codex app-server --listen stdio://`. WebSocket App Server là experimental theo tài liệu OpenAI và không nằm trong runtime path này. `CODEX_BRIDGE_BACKEND=cli` chọn hẳn compatibility backend `codex exec --json`; `CODEX_BRIDGE_CLI_FALLBACK=true` chỉ cho phép fallback ở context mới trước khi có thread App Server.
-
-Xem [vận hành inbound gateway](docs/inbound-gateway.md) và [kiến trúc v0.2](docs/architecture-v0.2.md).
-
-Cấu hình an toàn mặc định:
-
-| Biến môi trường | Mặc định | Ý nghĩa |
-|---|---:|---|
-| `HERMES_A2A_ENDPOINT` | `http://127.0.0.1:9900` | A2A root; chỉ URL loopback được chấp nhận. |
-| `HERMES_A2A_TOKEN` | rỗng | Bearer token đọc từ env, không nhận qua tool args. |
-| `HERMES_BRIDGE_STATE_PATH` | `~/.local/state/codex-hermes-a2a-bridge/state.sqlite3` | SQLite mode `0600`. |
-| `HERMES_BRIDGE_DEFAULT_TIMEOUT` | `60` | Timeout mặc định, clamp tối đa 300 giây. |
-| `HERMES_BRIDGE_AUTO_WAIT` | `15` | Thời gian `auto` chờ trước khi trả task handle. |
-| `HERMES_BRIDGE_SYNC_WAIT` | `30` | Giới hạn chờ inline của `sync`; sau đó trả handle nhưng correlation tiếp tục. |
-| `HERMES_BRIDGE_CORRELATION_TIMEOUT` | `300` | Tuổi thọ SSE worker để giữ A2A task ID/kết quả sau initial timeout. |
-| `HERMES_A2A_CONVERSATION_DIR` | `~/.hermes/a2a_conversations` | Fallback read-only khi TaskStore in-memory không còn. |
-| `HERMES_BRIDGE_MAX_TURNS` | `5` | Turn budget/context chống agent loop. |
-| `HERMES_BRIDGE_MAX_CONCURRENCY` | `4` | Số outbound call hoặc inbound Codex turn chạy đồng thời. |
-
-Các biến inbound quan trọng:
-
-| Biến môi trường | Mặc định | Ý nghĩa |
-|---|---:|---|
-| `CODEX_A2A_HOST` / `CODEX_A2A_PORT` | `127.0.0.1` / `9910` | Bind inbound; non-loopback bắt buộc token. |
-| `CODEX_A2A_BEARER_TOKEN` | rỗng | Bearer auth tùy chọn, chỉ nhận từ env. |
-| `CODEX_A2A_PUBLIC_URL` | bind URL | URL quảng cáo trong Agent Card. |
-| `CODEX_A2A_MAX_REQUEST_BYTES` | `1048576` | Giới hạn body, áp dụng khi đọc từng chunk. |
-| `CODEX_A2A_MAX_PENDING_TASKS` | `16` | Tổng inbound task queued + running; effective cap không thấp hơn concurrency. |
-| `CODEX_BRIDGE_BACKEND` | `app-server` | `app-server` hoặc explicit `cli`. |
-| `CODEX_BRIDGE_CLI_FALLBACK` | `false` | Cho fallback CLI có giới hạn trên context mới. |
-| `CODEX_WORKSPACE_ROOT` | cwd | Workspace Codex xử lý task. |
-| `CODEX_BRIDGE_APPROVAL_POLICY` | `never` | `never`, `untrusted`, `on-request`. |
-| `CODEX_BRIDGE_CODEX_TIMEOUT` | `300` | Absolute timeout mỗi lượt Codex. |
-
-## Bật Hermes A2A và đăng ký Codex
-
-Trên Hermes 0.20.5 đã cài local:
+Confirm discovery:
 
 ```bash
-hermes plugins enable a2a-platform --no-allow-tool-override
-hermes config set gateway.platforms.a2a.enabled true
-hermes gateway run --no-supervise
+curl --fail http://127.0.0.1:9910/.well-known/agent-card.json
 ```
 
-Khi foreground pass, có thể cài user service (không `sudo`):
+Send one harmless A2A task:
 
 ```bash
-hermes gateway install --start-now --start-on-login
+curl --fail-with-body http://127.0.0.1:9910/ \
+  -H 'Content-Type: application/json' \
+  -H 'A2A-Version: 1.0' \
+  -d '{"jsonrpc":"2.0","id":"quickstart-1","method":"SendMessage","params":{"message":{"messageId":"quickstart-message-1","role":"ROLE_USER","parts":[{"text":"Reply with exactly CODEX_A2A_OK"}]}}}'
 ```
 
-Đăng ký bridge trong cấu hình MCP dùng chung của Codex:
+To let Hermes call Codex using Hermes' native outbound A2A tools:
 
 ```bash
-codex mcp add codex-hermes-a2a-bridge -- \
-  /absolute/path/to/codex-hermes-a2a-bridge/.venv/bin/codex-hermes-a2a-bridge serve
-codex mcp get codex-hermes-a2a-bridge
+hermes tools enable a2a --platform cli
 ```
 
-Phải mở/restart một Codex client mới để đọc entry mới. MCP stdio chỉ ghi protocol frames ra stdout; diagnostics đi stderr.
+Add a peer to `~/.hermes/config.yaml`:
 
-## Bảy MCP tool outbound
+```yaml
+a2a_agents:
+  codex:
+    url: "http://127.0.0.1:9910"
+    timeout: 300
+```
 
-| Tool | Công dụng |
+Do not enable `a2a` tools on the inbound Hermes `a2a` platform unless agent chaining is intentional; both systems have anti-loop limits, but an explicit topology is safer.
+
+## Sessions and tasks
+
+Outbound calls map a stable Codex `conversation_key` to a Hermes A2A `contextId`. Inbound calls map an A2A `contextId` and task to a Codex App Server thread and turn. Follow-up messages reuse these mappings, and task status remains queryable through SQLite across gateway restarts.
+
+For a mutating outbound request, provide an `idempotency_key`. If a network timeout leaves the result ambiguous, query or wait on the existing task. The gateway deliberately does not blindly resend.
+
+See [architecture v0.2](docs/architecture-v0.2.md) and the [inbound operations guide](docs/inbound-gateway.md).
+
+## Outbound MCP tools
+
+| Tool | Purpose |
 |---|---|
-| `hermes_status` | Health, Agent Card tóm tắt, DB counts và kết nối. |
-| `hermes_chat` | Tạo/tiếp tục hội thoại; `auto`, `sync` hoặc `async`; profile `default`. |
-| `hermes_task_get` | Reconcile trạng thái, kết quả, lỗi hoặc `input_required`. |
-| `hermes_tasks_list` | Liệt kê durable bridge tasks theo conversation/state. |
-| `hermes_task_wait` | Chờ active stream, subscribe SSE, rồi polling fallback. |
-| `hermes_task_cancel` | Gửi cancel best-effort; không tuyên bố computation đã dừng. |
-| `hermes_contexts` | List/inspect/close mapping; close không xóa dữ liệu Hermes. |
+| `hermes_status` | Check persistence, Hermes health, and Agent Card discovery. |
+| `hermes_chat` | Start or continue a conversation in `auto`, `sync`, or `async` mode. |
+| `hermes_task_get` | Reconcile and return task state, result, error, or input request. |
+| `hermes_tasks_list` | List durable tasks by conversation and state. |
+| `hermes_task_wait` | Wait through active SSE, subscription, then polling fallback. |
+| `hermes_task_cancel` | Request best-effort cancellation. |
+| `hermes_contexts` | List, inspect, or close local context mappings. |
 
-Bộ bốn thao tác MVP từng nêu trong nghiên cứu (discover, send, get, continue) **không phải full A2A**. V0.1 gom chúng thành bảy high-level tools phục vụ hội thoại/task; các A2A operation thấp hơn như push notification CRUD và administration của Hermes không được expose trực tiếp.
+These tools expose conversation and task operations only. They do not expose Hermes administration, shell, plugin, model, or service controls.
 
-## A2A operation inbound v0.2
+## Configuration
 
-- Discovery: `GET /.well-known/agent-card.json` và legacy `agent.json`.
-- JSON-RPC: `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask` cùng alias path-style cũ.
-- A2A v1 trả `SendMessage.result.task`; stream SSE phát `task` đầu tiên rồi `statusUpdate`/`artifactUpdate`, không phát trường `final` cũ. `ListTasks` có filter, cursor pagination và stable updated ordering.
-- Không hỗ trợ push notification CRUD; Agent Card báo `pushNotifications: false`.
-- App Server approval/request-user-input được trả thành `TASK_STATE_INPUT_REQUIRED`; message tiếp theo dùng `message.taskId` để tiếp tục cùng task và gateway suy ra/kiểm tra context. CLI backend không có capability này và health metadata không quảng cáo input-required như capability chung.
-- Cancel là best-effort: App Server dùng `turn/interrupt`, CLI terminate subprocess; response luôn nói trạng thái dừng computation là `unknown`.
-- RPC localhost yêu cầu JSON và kiểm tra Host/Origin/Sec-Fetch-Site; non-loopback vẫn bắt buộc bearer token.
-- Request body được giới hạn trong lúc stream, mọi non-text/mixed Part bị reject trước backend, và admission cap chặn tăng worker/task không giới hạn.
-- Duplicate SSE dùng per-subscriber broadcast; inbound task/message mutation commit nguyên tử và replay có thể phục hồi lỗi sau commit nhưng trước worker scheduling.
+Safety-critical settings:
 
-## Workflow mẫu
+| Variable | Default | Purpose |
+|---|---:|---|
+| `HERMES_A2A_ENDPOINT` | `http://127.0.0.1:9900` | Outbound Hermes A2A root; loopback only. |
+| `HERMES_A2A_TOKEN` | empty | Optional outbound bearer token, read from env only. |
+| `CODEX_A2A_GATEWAY_STATE_PATH` | platform state directory | SQLite file; mode `0600`. |
+| `CODEX_A2A_GATEWAY_MAX_TURNS` | `5` | Per-context anti-loop budget. |
+| `CODEX_A2A_GATEWAY_MAX_CONCURRENCY` | `4` | Shared outbound/inbound execution limit. |
+| `CODEX_A2A_HOST` / `CODEX_A2A_PORT` | `127.0.0.1` / `9910` | Inbound bind. |
+| `CODEX_A2A_BEARER_TOKEN` | empty | Required before a non-loopback bind/public URL. |
+| `CODEX_A2A_GATEWAY_BACKEND` | `app-server` | `app-server` or explicit `cli`. |
+| `CODEX_A2A_GATEWAY_CLI_FALLBACK` | `false` | Limited fallback for a new context only. |
+| `CODEX_WORKSPACE_ROOT` | current directory | Workspace used by Codex. |
+| `CODEX_A2A_GATEWAY_APPROVAL_POLICY` | `never` | `never`, `untrusted`, or `on-request`. |
 
-1. Codex gọi `hermes_status`.
-2. Codex gọi `hermes_chat(message=..., conversation_key=<ổn định>, mode="auto")`.
-3. Nếu task còn chạy, dùng `hermes_task_wait` hoặc `hermes_task_get`; không resend mù sau timeout mơ hồ.
-4. Nếu `needs_input=true`, hỏi người dùng rồi gọi `hermes_chat` với cùng `conversation_key`/`context_id`.
-5. Lượt hội thoại tiếp theo tiếp tục cùng mapping; `hermes_contexts(action="close")` chỉ đóng mapping bridge.
+See [.env.example](.env.example) for the complete operator surface. Legacy `HERMES_BRIDGE_*` and `CODEX_BRIDGE_*` variables remain lower-priority compatibility aliases for v0.2. The legacy executable `codex-hermes-a2a-bridge` also remains as a temporary alias.
 
-Với tác vụ có side effect, cung cấp `idempotency_key`. Hermes 0.20.5 không có idempotency wire-level, nên bridge không retry mutating send khi kết quả truyền tải không rõ.
+## Security and privacy
 
-Từ v0.1.1, cả ba mode đều dùng `SendStreamingMessage` để nhận A2A task ID ngay ở event đầu. `sync` chỉ chờ inline tối đa 30 giây (hoặc `timeout` nếu nhỏ hơn); stream vẫn sống tới correlation timeout. Với record cũ ở `outcome_unknown` chưa có A2A ID, `hermes_task_get`/`hermes_task_wait` thử `ListTasks(contextId)` trước, rồi mới đọc conversation persistence chính thức của Hermes. Recovery chỉ gắn kết quả khi có đúng một local unresolved task và đúng một remote/disk candidate; trường hợp mơ hồ được giữ nguyên, không resend và không đoán. Disk fallback không có A2A state nên trả warning và coi agent reply đã persist là `completed`.
+- Outbound URLs and discovered interfaces must remain loopback-only and redirects are not followed.
+- A non-loopback inbound host or public URL requires a bearer token; use TLS at a trusted reverse proxy for any remote deployment.
+- Tokens are read from environment variables and compared without writing them to logs.
+- Original outbound prompts are not stored by the gateway. SQLite does store results, artifacts, mappings, status, and minimal error data, which may still be sensitive.
+- Codex and Hermes can maintain their own session, audit, and conversation records.
+- Never publish tokens, transcripts, SQLite files, or private workspace paths in issues.
 
-## Kiểm thử và vận hành
+Report vulnerabilities through GitHub private vulnerability reporting as described in [SECURITY.md](SECURITY.md).
+
+## Development and verification
 
 ```bash
-.venv/bin/pytest --cov=codex_hermes_a2a_bridge --cov-report=term-missing
-.venv/bin/codex-hermes-a2a-bridge doctor
-.venv/bin/codex-hermes-a2a-bridge smoke \
-  'Reply with exactly MY_MARKER and nothing else.' \
-  --conversation-key manual-smoke
-.venv/bin/python scripts/live_check.py manual-smoke
+.venv/bin/python -m compileall -q src tests scripts
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/mypy src
+.venv/bin/pytest --cov=codex_a2a_gateway --cov-report=term-missing
 ```
 
-`pytest` dùng fake A2A server trên ephemeral loopback port và không cần Hermes thật. `doctor` và `live_check.py` là read-only. Lệnh `smoke` gửi một task thật; chỉ chạy chủ động với nội dung vô hại.
+Default tests use an ephemeral fake A2A server and do not require Hermes or a live model. `doctor` is read-only; `smoke` sends a real Hermes task and must be run intentionally with harmless content.
 
-## Bảo mật và quyền riêng tư
+Current release evidence is in [testing report v0.2](docs/testing-report-v0.2.md). Coding agents must also follow [AGENTS.md](AGENTS.md).
 
-- V0.1.1 từ chối endpoint và Agent Card URL không phải loopback, không follow redirect và không nhận token qua MCP tool arguments.
-- SQLite mặc định nằm ngoài source tree với quyền file `0600`; nó lưu mapping, fingerprint, trạng thái, **kết quả/artifact** và lỗi tối thiểu. Kết quả có thể chứa dữ liệu nhạy cảm, vì vậy cần áp dụng retention/backup phù hợp.
-- Prompt gốc không được bridge persist, nhưng Hermes có thể ghi conversation/audit log riêng. Fallback recovery chỉ đọc thư mục conversation Hermes được cấu hình.
-- MCP server phải được chạy bởi user tin cậy; bảy tool có thể kích hoạt Hermes dùng skills/tools với side effect. Dùng `idempotency_key` và không resend mù khi `outcome_unknown`.
-- Báo cáo lỗ hổng theo [SECURITY.md](SECURITY.md). Không đăng token, transcript hoặc SQLite trong issue.
+## Migration from the old name
 
-## Guarantees và giới hạn upstream
+Install the renamed project, add the new MCP entry, verify it, then remove the old entry. Do not leave both active against the same state database.
 
-Bridge bảo đảm policy loopback, mapping local bền vững, không retry mutating send sau ambiguity và semantics cancel trung thực. Bridge **không** bảo đảm Hermes đã dừng computation, token-level streaming, wire-level idempotency hay task persistence qua Hermes restart.
+```bash
+.venv/bin/python -m pip install -e .
+codex mcp add codex-a2a-gateway -- \
+  /absolute/path/to/codex-a2a-gateway/.venv/bin/codex-a2a-gateway serve
+codex mcp get codex-a2a-gateway
+codex mcp remove codex-hermes-a2a-bridge
+```
 
-Hermes 0.20.5 dùng TaskStore in-memory, lifecycle SSE và protocol cancel không abort live turn. Conversation-store recovery của bridge là fallback read-only có điều kiện, không thay thế durable task store của upstream. Các chi tiết đã xác minh nằm trong [Hermes A2A reference](docs/hermes-a2a-reference.md).
+The gateway uses the old state file automatically when it exists and the new default file has not been created. It never silently moves or deletes that data.
 
-## Troubleshooting
+## Documentation
 
-- `a2a_unreachable`: chạy `hermes gateway status`, kiểm tra card tại `http://127.0.0.1:9900/.well-known/agent-card.json`.
-- A2A plugin enabled nhưng không có port: kiểm tra `hermes config get gateway.platforms.a2a.enabled`, rồi restart gateway.
-- Codex không thấy tool: chạy `codex mcp get codex-hermes-a2a-bridge`, sau đó dùng process/client Codex mới.
-- `outcome_unknown`: gọi `hermes_task_get`/`hermes_task_wait` để bridge tự reconcile; nếu vẫn mơ hồ thì không resend tác vụ có side effect và hỏi người dùng.
-- `turn_budget_exceeded`: đóng mapping và tạo conversation mới; không tăng budget chỉ để vòng agent tiếp tục vô hạn.
-- Hermes 0.20.5 mất A2A TaskStore khi restart; bridge vẫn giữ local task/result nhưng remote refresh có thể báo task không còn.
-- Trên macOS hiện tại, nếu `launchctl bootstrap` trả exit 5, Hermes dùng detached fallback: chạy được nhưng không auto-start/auto-restart. Dùng `hermes gateway status` để xác nhận.
-
-## Rollback
-
-Xem [scripts/rollback.sh](scripts/rollback.sh). Script mặc định chỉ in kế hoạch. `scripts/rollback.sh --apply` gỡ đúng MCP entry và cấu hình/plugin A2A, nhưng giữ gateway service vì service có thể phục vụ platform khác. Chỉ thêm `--include-gateway-service` nếu gateway được cài riêng cho rollout này. Source, `.venv`, SQLite và transcript Hermes được giữ nguyên.
-
-Các backup scoped được tạo cạnh file cấu hình với hậu tố `.pre-codex-hermes-a2a-bridge-v0.1.bak`; không tự động restore toàn file vì có thể ghi đè thay đổi mới của người dùng.
-
-## Tài liệu
-
-- [Kế hoạch triển khai v0.1](docs/implementation-plan-v0.1.md)
-- [Báo cáo kiểm thử v0.1](docs/testing-report-v0.1.md)
-- [Tham chiếu Hermes A2A v1.0](docs/hermes-a2a-reference.md)
-- [Thiết kế MCP bridge](docs/mcp-bridge-design.md)
-- [CHANGELOG](CHANGELOG.md)
-- [Hướng dẫn đóng góp](CONTRIBUTING.md)
-- [Chính sách bảo mật](SECURITY.md)
+- [Vietnamese README](README.vi.md)
+- [Architecture v0.2](docs/architecture-v0.2.md)
+- [Inbound gateway operations](docs/inbound-gateway.md)
+- [Hermes A2A reference](docs/hermes-a2a-reference.md)
+- [Testing report v0.2](docs/testing-report-v0.2.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 - [Apache License 2.0](LICENSE)
 
-Nguồn chuẩn: [OpenAI Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [Hermes A2A guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a), [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/plugins/platforms/a2a). Khi khác biệt, source local Hermes 0.20.5 commit `d736f5d53f1d33fabad5a17cb070eb138b618fb8` được ưu tiên.
+Primary references: [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [Hermes A2A](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a), and the [A2A protocol](https://a2a-protocol.org/).

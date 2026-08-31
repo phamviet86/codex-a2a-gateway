@@ -1,7 +1,11 @@
 # Changelog
 
-## 0.2.0 — 2026-08-31
+## 0.2.0 — 2026-09-01
 
+- Đổi tên và định vị project thành `codex-a2a-gateway`: inbound A2A generic cho Codex, outbound MCP adapter đã kiểm thử với Hermes.
+- Đổi distribution/executable/namespace thành `codex-a2a-gateway` / `codex-a2a-gateway` / `codex_a2a_gateway`; giữ alias executable, env và state-path cũ trong v0.2 để migration an toàn.
+- Thêm README tiếng Anh làm bản chuẩn, README tiếng Việt, quickstart hai chiều, `AGENTS.md` và báo cáo kiểm thử live v0.2.
+- Xác minh live cả Codex → Hermes và Hermes native `a2a_call` → Codex App Server trên Hermes 0.20.6; công bố v0.2.0 ở mức public beta.
 - Giữ nguyên MCP façade outbound tới Hermes và thêm A2A v1.0 HTTP gateway inbound generic tới Codex.
 - Thêm Agent Card, `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask` và alias pre-1.0 tương ứng; không quảng cáo push notification.
 - Chuẩn hóa response/event theo A2A v1, bearer security objects, task continuation qua `message.taskId`, ListTasks filter/cursor và TaskNotFound.

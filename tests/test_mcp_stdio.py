@@ -16,13 +16,13 @@ async def test_mcp_stdio_initialize_list_and_all_tools(fake_a2a: FakeA2AServer, 
     env.update(
         {
             "HERMES_A2A_ENDPOINT": fake_a2a.endpoint,
-            "HERMES_BRIDGE_STATE_PATH": str(tmp_path / "stdio.sqlite"),
-            "HERMES_BRIDGE_DEFAULT_TIMEOUT": "5",
+            "CODEX_A2A_GATEWAY_STATE_PATH": str(tmp_path / "stdio.sqlite"),
+            "CODEX_A2A_GATEWAY_DEFAULT_TIMEOUT": "5",
         }
     )
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "codex_hermes_a2a_bridge.cli", "serve"],
+        args=["-m", "codex_a2a_gateway.cli", "serve"],
         cwd=Path(__file__).parents[1],
         env=env,
     )

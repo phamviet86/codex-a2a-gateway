@@ -7,10 +7,10 @@ from typing import Any
 import httpx
 import pytest
 
-from codex_hermes_a2a_bridge.a2a import A2AClient
-from codex_hermes_a2a_bridge.core import BridgeService
-from codex_hermes_a2a_bridge.models import A2AError
-from codex_hermes_a2a_bridge.settings import Settings
+from codex_a2a_gateway.a2a import A2AClient
+from codex_a2a_gateway.core import BridgeService
+from codex_a2a_gateway.models import A2AError
+from codex_a2a_gateway.settings import Settings
 
 
 class AmbiguousClient:

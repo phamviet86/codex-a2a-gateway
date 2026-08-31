@@ -13,7 +13,8 @@ done
 
 if [ "$apply" != "true" ]; then
   echo "Rollback plan (no changes made):"
-  echo "  codex mcp remove codex-hermes-a2a-bridge"
+  echo "  codex mcp remove codex-a2a-gateway"
+  echo "  codex mcp remove codex-hermes-a2a-bridge  # legacy registration, if present"
   echo "  hermes config unset gateway.platforms.a2a"
   echo "  hermes plugins disable a2a-platform"
   echo "Gateway service is preserved because it may serve unrelated platforms."
@@ -22,6 +23,7 @@ if [ "$apply" != "true" ]; then
   exit 0
 fi
 
+codex mcp remove codex-a2a-gateway || true
 codex mcp remove codex-hermes-a2a-bridge || true
 hermes config unset gateway.platforms.a2a || true
 hermes plugins disable a2a-platform || true

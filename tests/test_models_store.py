@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from codex_hermes_a2a_bridge.models import BridgeError, TaskRecord, now_iso, request_fingerprint
-from codex_hermes_a2a_bridge.settings import Settings
-from codex_hermes_a2a_bridge.store import Store
+from codex_a2a_gateway.models import BridgeError, TaskRecord, now_iso, request_fingerprint
+from codex_a2a_gateway.settings import Settings
+from codex_a2a_gateway.store import Store
 
 
 def test_settings_only_accept_loopback(tmp_path: Path) -> None:
@@ -22,6 +22,36 @@ def test_settings_only_accept_loopback(tmp_path: Path) -> None:
         inbound_token="secret",
     )
     assert exposed.advertised_url == "https://gateway.example.com"
+
+
+def test_settings_prefer_canonical_env_over_legacy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    canonical = tmp_path / "canonical.sqlite"
+    legacy = tmp_path / "legacy.sqlite"
+    monkeypatch.setenv("CODEX_A2A_GATEWAY_STATE_PATH", str(canonical))
+    monkeypatch.setenv("HERMES_BRIDGE_STATE_PATH", str(legacy))
+    monkeypatch.setenv("CODEX_A2A_GATEWAY_BACKEND", "app-server")
+    monkeypatch.setenv("CODEX_BRIDGE_BACKEND", "cli")
+    settings = Settings.from_env()
+    assert settings.state_path == canonical
+    assert settings.backend == "app-server"
+
+
+def test_settings_accept_legacy_env_and_state_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    explicit_legacy = tmp_path / "explicit-legacy.sqlite"
+    monkeypatch.setenv("HERMES_BRIDGE_STATE_PATH", str(explicit_legacy))
+    assert Settings.from_env().state_path == explicit_legacy
+
+    monkeypatch.delenv("HERMES_BRIDGE_STATE_PATH")
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    legacy_default = tmp_path / "codex-hermes-a2a-bridge" / "state.sqlite3"
+    legacy_default.parent.mkdir(parents=True)
+    legacy_default.touch()
+    assert Settings().state_path == legacy_default
+
+    current_default = tmp_path / "codex-a2a-gateway" / "state.sqlite3"
+    current_default.parent.mkdir(parents=True)
+    current_default.touch()
+    assert Settings().state_path == current_default
 
 
 def test_context_mapping_close_and_turn_budget(tmp_path: Path) -> None:

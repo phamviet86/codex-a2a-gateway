@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from codex_hermes_a2a_bridge.codex_backend import AppServerBackend, CLIBackend
+from codex_a2a_gateway.codex_backend import AppServerBackend, CLIBackend
 
 
 class FakeStdin:

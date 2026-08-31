@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from fake_a2a import FakeA2AServer
 
-from codex_hermes_a2a_bridge.core import BridgeService
-from codex_hermes_a2a_bridge.models import TaskRecord, now_iso, request_fingerprint
-from codex_hermes_a2a_bridge.settings import Settings
+from codex_a2a_gateway.core import BridgeService
+from codex_a2a_gateway.models import TaskRecord, now_iso, request_fingerprint
+from codex_a2a_gateway.settings import Settings
 
 
 def _unknown_task(service: BridgeService, context_id: str, bridge_task_id: str = "bt-unknown") -> TaskRecord:
@@ -68,9 +68,7 @@ async def test_sync_uses_stream_and_completes_after_initial_timeout_without_rese
 
 
 @pytest.mark.asyncio
-async def test_outcome_unknown_recovers_by_context_list_without_resend(
-    fake_a2a: FakeA2AServer, tmp_path: Path
-) -> None:
+async def test_outcome_unknown_recovers_by_context_list_without_resend(fake_a2a: FakeA2AServer, tmp_path: Path) -> None:
     context_id = "codex-recover-list"
     service = BridgeService(
         Settings(
@@ -128,9 +126,7 @@ async def test_outcome_unknown_falls_back_to_official_conversation_store(
 
 
 @pytest.mark.asyncio
-async def test_recovery_refuses_ambiguous_multiple_local_tasks(
-    fake_a2a: FakeA2AServer, tmp_path: Path
-) -> None:
+async def test_recovery_refuses_ambiguous_multiple_local_tasks(fake_a2a: FakeA2AServer, tmp_path: Path) -> None:
     context_id = "codex-recover-ambiguous"
     service = BridgeService(
         Settings(

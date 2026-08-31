@@ -4,15 +4,13 @@
 
 | Version | Security fixes |
 |---|---|
-| 0.2.x | Có |
-| 0.1.x | Có |
+| 0.2.x | Có, trong thời gian public beta |
+| 0.1.x | Không; nâng cấp lên 0.2.x |
 | < 0.1.0 | Không |
 
 ## Báo cáo lỗ hổng
 
-Không đăng token, prompt riêng tư, transcript hoặc chi tiết khai thác nhạy cảm trong issue công khai. Hãy dùng GitHub **Report a vulnerability** (private security advisory) của repository. Maintainer nên bật tính năng này trước khi public repository.
-
-Nếu private reporting chưa được bật, liên hệ riêng repository owner qua kênh được ghi trên GitHub profile và chỉ cung cấp thông tin tối thiểu cho tới khi có kênh mã hóa phù hợp.
+Không đăng token, prompt riêng tư, transcript hoặc chi tiết khai thác nhạy cảm trong issue công khai. Hãy dùng GitHub **Report a vulnerability** của repository; private vulnerability reporting đã được bật cho project này.
 
 ## Security boundary
 

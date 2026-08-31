@@ -1,5 +1,7 @@
 # Báo cáo kiểm thử v0.1
 
+> **Historical evidence:** báo cáo này ghi lại lần kiểm thử v0.1 dưới tên cũ. Không dùng các command hoặc version tại đây làm hướng dẫn vận hành hiện tại; xem [testing report v0.2](testing-report-v0.2.md).
+
 Ngày kiểm thử: 2026-08-25 (Asia/Ho_Chi_Minh)  
 Bridge: `0.1.1`, Python `3.11.16`, MCP SDK `2.1.0`  
 Hermes local: `0.20.5`, source commit `d736f5d53f1d33fabad5a17cb070eb138b618fb8`

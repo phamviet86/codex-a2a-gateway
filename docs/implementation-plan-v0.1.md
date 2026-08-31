@@ -1,5 +1,7 @@
 # Kế hoạch triển khai v0.1
 
+> **Historical document:** đây là kế hoạch triển khai v0.1 dưới tên cũ `codex-hermes-a2a-bridge`. Tên, command và biến môi trường trong tài liệu này được giữ làm bằng chứng lịch sử; xem README hiện tại cho v0.2.
+
 ## 1. Mục tiêu đã chốt
 
 `codex-hermes-a2a-bridge` là MCP server local để Codex làm “lễ tân” và giao hội thoại/task cho Hermes profile `default` qua A2A v1.0. Bridge không sao chép agent loop, memory, skills, tools hoặc orchestration của Hermes. V0.1 chỉ có đúng bảy high-level tools đã chỉ định; không có tool quản trị model, plugin, update, shell hay service.

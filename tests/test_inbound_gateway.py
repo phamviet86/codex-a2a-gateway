@@ -10,12 +10,12 @@ from typing import Any
 import httpx
 import pytest
 
-from codex_hermes_a2a_bridge.codex_backend import BackendResult
-from codex_hermes_a2a_bridge.gateway import create_gateway_app
-from codex_hermes_a2a_bridge.inbound import InboundService
-from codex_hermes_a2a_bridge.models import BridgeError, TaskRecord, now_iso, request_fingerprint
-from codex_hermes_a2a_bridge.settings import Settings
-from codex_hermes_a2a_bridge.store import Store
+from codex_a2a_gateway.codex_backend import BackendResult
+from codex_a2a_gateway.gateway import create_gateway_app
+from codex_a2a_gateway.inbound import InboundService
+from codex_a2a_gateway.models import BridgeError, TaskRecord, now_iso, request_fingerprint
+from codex_a2a_gateway.settings import Settings
+from codex_a2a_gateway.store import Store
 
 
 class FakeBackend:
