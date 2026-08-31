@@ -5,6 +5,7 @@ import asyncio
 import json
 import sys
 
+from . import __version__
 from .core import BridgeService
 from .gateway import run_gateway
 from .models import TERMINAL_STATES, BridgeError
@@ -43,6 +44,7 @@ async def _smoke(message: str, conversation_key: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Bidirectional A2A gateway for Codex")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="Run the MCP server over stdio")
     sub.add_parser("gateway", help="Run the standalone inbound A2A HTTP gateway")

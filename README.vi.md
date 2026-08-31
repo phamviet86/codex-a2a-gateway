@@ -2,7 +2,7 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Public beta · v0.2.0**
+**Public beta · v0.2.1**
 
 `codex-a2a-gateway` giúp Codex giao tiếp hai chiều theo chuẩn A2A v1.0:
 
@@ -16,6 +16,19 @@ Hermes là peer đầu tiên đã được kiểm thử, không phải giới h�
 ## Cài đặt
 
 Yêu cầu CPython `>=3.11,<3.12`, Codex CLI đã đăng nhập và Hermes Agent nếu cần chiều Codex → Hermes.
+
+Trên máy vận hành, cài trực tiếp release wheel vào virtualenv riêng, không cần clone source:
+
+```bash
+python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
+```
+
+Release wheel và quy trình cài sạch được kiểm tra trên macOS/Linux. Windows/WSL chưa được xác minh. Xem [hướng dẫn triển khai trên máy khác](docs/deployment.md) để cài Codex/Hermes, đăng ký MCP, migrate state, nâng cấp, rollback hoặc gỡ cài đặt.
+
+Nếu phát triển từ source:
 
 ```bash
 git clone https://github.com/phamviet86/codex-a2a-gateway.git

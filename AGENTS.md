@@ -73,7 +73,10 @@ build_dir=$(mktemp -d)
 .venv/bin/python -m build --outdir "$build_dir"
 .venv/bin/python -m twine check "$build_dir"/*
 .venv/bin/python scripts/check_dist.py "$build_dir"
+.venv/bin/python scripts/check_wheel_install.py "$build_dir"/*.whl
 ```
+
+The clean-wheel check is required on both macOS and Linux CI. Keep deployment commands in `docs/deployment.md` installable without a Git clone, and never claim an operating system as supported until that path has passed CI or an equivalent clean-host test.
 
 For App Server protocol changes, also run `scripts/check_app_server_schema.py` against the supported local Codex CLI. A live Hermes or Codex model task requires explicit operator authorization and must use a harmless, uniquely identifiable prompt.
 

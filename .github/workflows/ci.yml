@@ -9,8 +9,15 @@ permissions:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    name: Python 3.11 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -34,3 +41,4 @@ jobs:
           python -m build
           python -m twine check dist/*
           python scripts/check_dist.py dist
+          python scripts/check_wheel_install.py dist/*.whl

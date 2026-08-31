@@ -5,7 +5,7 @@
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
-**Public beta · v0.2.0**
+**Public beta · v0.2.1**
 
 English | [Tiếng Việt](README.vi.md)
 
@@ -57,9 +57,24 @@ Known limitations:
 | Hermes Agent | Live-tested with `0.20.6` on macOS |
 | MCP | Local stdio server |
 
+The release wheel and clean-install path are tested in CI on macOS and Linux. Windows/WSL is not yet verified. See [deploying on another computer](docs/deployment.md) for the exact support boundary.
+
 The App Server backend follows the official [Codex App Server protocol](https://learn.chatgpt.com/docs/app-server): initialize once, start or resume a thread, start a turn, and consume streamed notifications. WebSocket App Server transport is not used by this project.
 
 ## Install
+
+For an operator machine, install the release wheel into a dedicated virtual environment without cloning the repository:
+
+```bash
+python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
+```
+
+See the complete [deployment guide](docs/deployment.md) for prerequisites, MCP registration, Hermes setup, state migration, upgrades, rollback, and uninstall.
+
+For a source checkout or contributor environment:
 
 ```bash
 git clone https://github.com/phamviet86/codex-a2a-gateway.git
@@ -228,6 +243,7 @@ The gateway uses the old state file automatically when it exists and the new def
 ## Documentation
 
 - [Vietnamese README](README.vi.md)
+- [Deploy on another computer](docs/deployment.md)
 - [Architecture v0.2](docs/architecture-v0.2.md)
 - [Inbound gateway operations](docs/inbound-gateway.md)
 - [Hermes A2A reference](docs/hermes-a2a-reference.md)

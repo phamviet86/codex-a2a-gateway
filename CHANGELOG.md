@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 2026-09-01
+
+- Thêm hướng dẫn triển khai từ GitHub Release trên máy sạch, gồm prerequisite, đăng ký MCP, cấu hình Hermes, nâng cấp, rollback và gỡ cài đặt không xóa state.
+- Mở rộng CI sang macOS và Linux với CPython 3.11; mỗi job tự build rồi cài wheel vào virtualenv mới và kiểm tra cả hai executable.
+- Thêm `--version` cho CLI và kiểm tra tự động rằng metadata package, import và executable hoạt động sau khi cài wheel.
+- Ghi rõ Windows chưa được xác minh và deployment qua container chưa phải topology được hỗ trợ cho tích hợp local có Codex/Hermes đăng nhập.
+
 ## 0.2.0 — 2026-09-01
 
 - Đổi tên và định vị project thành `codex-a2a-gateway`: inbound A2A generic cho Codex, outbound MCP adapter đã kiểm thử với Hermes.
