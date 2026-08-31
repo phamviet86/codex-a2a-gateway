@@ -1,7 +1,9 @@
 # Testing report v0.2.0
 
-Test date: 2026-09-01 (Asia/Ho_Chi_Minh)  
-Release source: `v0.2.0`  
+Test date: 2026-09-01 (Asia/Ho_Chi_Minh)
+
+Release source: `v0.2.0`
+
 Result: **public-beta candidate passed**
 
 ## Environment
