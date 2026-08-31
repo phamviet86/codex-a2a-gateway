@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -22,10 +23,11 @@ class AmbiguousClient:
     async def discover(self, *, refresh: bool = False) -> dict[str, Any]:
         return {"name": "stub"}
 
-    async def stream_message(self, *_args: Any, **_kwargs: Any):
+    async def stream_message(self, *_args: Any, **_kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         self.send_calls += 1
-        raise A2AError("a2a_transport_ambiguous", "connection dropped")
-        yield {}  # pragma: no cover
+        if self.send_calls:
+            raise A2AError("a2a_transport_ambiguous", "connection dropped")
+        yield {}  # pragma: no cover - keeps the test double an async iterator
 
     async def aclose(self) -> None:
         return None

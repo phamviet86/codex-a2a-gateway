@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 — 2026-08-31
+
+- Giữ nguyên MCP façade outbound tới Hermes và thêm A2A v1.0 HTTP gateway inbound generic tới Codex.
+- Thêm Agent Card, `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask` và alias pre-1.0 tương ứng; không quảng cáo push notification.
+- Chuẩn hóa response/event theo A2A v1, bearer security objects, task continuation qua `message.taskId`, ListTasks filter/cursor và TaskNotFound.
+- Siết ingress localhost bằng JSON Content-Type cùng Host/Origin/Sec-Fetch-Site checks; giới hạn concurrency/stream queue và đóng cancellation race.
+- Recovery inbound xử lý toàn bộ active task; App Server dùng đúng `item/tool/requestUserInput` và schema probe kiểm tra method names.
+- Broadcast stream theo từng subscriber, reject mixed/non-text Part, chunked early body limit và bearer scheme case-insensitive.
+- Thêm total inbound admission cap và transaction atomic cho message/task/turn; replay phục hồi an toàn khoảng trống commit-to-worker kể cả qua restart.
+- Dùng Codex App Server JSON-RPC/JSONL qua stdio làm backend mặc định; WebSocket không được dùng ở production path.
+- Thêm backend tương thích `codex exec --json`, chỉ bật bằng cấu hình rõ; không quảng cáo `input-required` khi fallback có thể hoạt động.
+- Migrate SQLite để giữ `contextId ↔ threadId`, `taskId ↔ turnId`, direction/backend và idempotency theo `messageId` qua restart.
+- Thêm per-context lock, restart reconciliation, best-effort interrupt/cancel, loopback default, bearer auth tùy chọn và request/message limits.
+- Thêm daemon `gateway`, tài liệu kiến trúc/vận hành và regression tests cho protocol adapter, fallback, persistence và lifecycle inbound.
+
 ## 0.1.1 — 2026-08-25
 
 - Chuẩn bị public repository: Apache-2.0, metadata/build exclusions, CI, lint/type/coverage, contribution và security policy, issue/PR templates, sample env và kiểm tra distribution artifacts.

@@ -121,29 +121,33 @@ class FakeA2AServer:
                         pass
                     return
                 if method == "GetTask":
-                    task = outer.tasks.get(params.get("id"))
-                    if not task:
+                    task_id = params.get("id")
+                    lookup_task = outer.tasks.get(task_id) if isinstance(task_id, str) else None
+                    if not lookup_task:
                         self._json({"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32001, "message": "not found"}})
                     else:
-                        self._json({"jsonrpc": "2.0", "id": rpc_id, "result": {"task": task}})
+                        self._json({"jsonrpc": "2.0", "id": rpc_id, "result": {"task": lookup_task}})
                     return
                 if method == "ListTasks":
                     self._json({"jsonrpc": "2.0", "id": rpc_id, "result": {"tasks": list(outer.tasks.values())}})
                     return
                 if method == "CancelTask":
-                    task = outer.tasks.get(params.get("id"))
-                    if not task:
+                    task_id = params.get("id")
+                    cancel_task = outer.tasks.get(task_id) if isinstance(task_id, str) else None
+                    if not cancel_task:
                         self._json({"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32001, "message": "not found"}})
                     else:
-                        task["status"]["state"] = "TASK_STATE_CANCELED"
-                        self._json({"jsonrpc": "2.0", "id": rpc_id, "result": {"task": task}})
+                        cancel_task["status"]["state"] = "TASK_STATE_CANCELED"
+                        self._json({"jsonrpc": "2.0", "id": rpc_id, "result": {"task": cancel_task}})
                     return
                 if method == "SubscribeToTask":
-                    task = outer.tasks.get(params.get("id"))
-                    if not task:
+                    task_id = params.get("id")
+                    subscribed_task = outer.tasks.get(task_id) if isinstance(task_id, str) else None
+                    if not subscribed_task:
                         self._json({"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32001, "message": "not found"}})
                         return
-                    raw = f"data: {json.dumps({'jsonrpc': '2.0', 'id': rpc_id, 'result': {'task': task}})}\n\n".encode()
+                    event = {"jsonrpc": "2.0", "id": rpc_id, "result": {"task": subscribed_task}}
+                    raw = f"data: {json.dumps(event)}\n\n".encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Content-Length", str(len(raw)))

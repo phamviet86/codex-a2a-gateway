@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fake_a2a import FakeA2AServer
 
 from codex_hermes_a2a_bridge.a2a import A2AClient
 from codex_hermes_a2a_bridge.core import BridgeService
@@ -11,7 +12,7 @@ from codex_hermes_a2a_bridge.settings import Settings
 
 
 @pytest.mark.asyncio
-async def test_a2a_and_all_service_tool_operations(fake_a2a, tmp_path: Path) -> None:
+async def test_a2a_and_all_service_tool_operations(fake_a2a: FakeA2AServer, tmp_path: Path) -> None:
     settings = Settings(
         endpoint=fake_a2a.endpoint,
         state_path=tmp_path / "state.sqlite",

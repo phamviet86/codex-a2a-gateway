@@ -36,12 +36,13 @@ class TaskState(StrEnum):
 
 
 TERMINAL_STATES = {
-    TaskState.INPUT_REQUIRED.value,
     TaskState.COMPLETED.value,
     TaskState.FAILED.value,
     TaskState.CANCELED.value,
     TaskState.REJECTED.value,
 }
+
+TURN_END_STATES = TERMINAL_STATES | {TaskState.INPUT_REQUIRED.value}
 
 
 A2A_STATE_MAP = {
@@ -93,6 +94,14 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
         TaskState.CANCELED.value,
         TaskState.REJECTED.value,
     },
+    TaskState.INPUT_REQUIRED.value: {
+        TaskState.QUEUED.value,
+        TaskState.WORKING.value,
+        TaskState.COMPLETED.value,
+        TaskState.FAILED.value,
+        TaskState.CANCELED.value,
+        TaskState.REJECTED.value,
+    },
 }
 
 
@@ -125,6 +134,9 @@ class ContextRecord(BaseModel):
     created_at: str
     updated_at: str
     closed_at: str | None = None
+    direction: Literal["outbound", "inbound"] = "outbound"
+    codex_thread_id: str | None = None
+    backend: str | None = None
 
 
 class TaskRecord(BaseModel):
@@ -149,6 +161,8 @@ class TaskRecord(BaseModel):
     created_at: str
     updated_at: str
     completed_at: str | None = None
+    direction: Literal["outbound", "inbound"] = "outbound"
+    codex_turn_id: str | None = None
 
 
 class A2ATaskResult(BaseModel):

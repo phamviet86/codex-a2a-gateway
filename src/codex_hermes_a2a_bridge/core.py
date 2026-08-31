@@ -8,6 +8,7 @@ from typing import Any, Literal, cast
 from .a2a import A2AClient
 from .models import (
     TERMINAL_STATES,
+    TURN_END_STATES,
     A2AError,
     A2ATaskResult,
     BridgeError,
@@ -128,7 +129,7 @@ class BridgeService:
             error = exc.as_result()["error"]
         return {
             "ok": error is None,
-            "bridge": {"version": "0.1.1", "transport": "stdio", "state": self.store.counts()},
+            "bridge": {"version": "0.2.0", "transport": "stdio", "state": self.store.counts()},
             "hermes": {
                 "endpoint": self.settings.endpoint,
                 "reachable": error is None,
@@ -246,7 +247,7 @@ class BridgeService:
                     parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
                     if parsed:
                         self._apply_remote(bridge_task_id, parsed)
-                        if parsed.state in TERMINAL_STATES:
+                        if parsed.state in TURN_END_STATES:
                             break
         except asyncio.CancelledError:
             raise
@@ -349,7 +350,7 @@ class BridgeService:
         if not task:
             raise BridgeError("task_not_found", "bridge task not found")
         timeout = max(1.0, min(timeout, 300.0))
-        if task.state in TERMINAL_STATES:
+        if task.state in TURN_END_STATES:
             return {**self._task_result(task), "wait_strategy": "already_terminal"}
 
         worker = self._workers.get(task.bridge_task_id)
@@ -367,7 +368,7 @@ class BridgeService:
                 task, recovered_by = await self._recover_unknown(task)
                 if recovered_by:
                     strategy = recovered_by
-                if task.state in TERMINAL_STATES:
+                if task.state in TURN_END_STATES:
                     result = {**self._task_result(task), "wait_strategy": strategy}
                     if strategy == "conversation_store":
                         result["recovery_warning"] = (
@@ -387,7 +388,7 @@ class BridgeService:
                     parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
                     if parsed:
                         task = self._apply_remote(task.bridge_task_id, parsed)
-                        if task.state in TERMINAL_STATES:
+                        if task.state in TURN_END_STATES:
                             return {**self._task_result(task), "wait_strategy": strategy}
             except A2AError:
                 strategy = "poll_fallback"
@@ -398,17 +399,17 @@ class BridgeService:
                 except A2AError as exc:
                     if exc.code == "a2a_task_not_found":
                         break
-                if task.state in TERMINAL_STATES:
+                if task.state in TURN_END_STATES:
                     break
                 await asyncio.sleep(min(0.5, max(0.05, deadline - asyncio.get_running_loop().time())))
-        return {**self._task_result(task), "wait_strategy": strategy, "timed_out": task.state not in TERMINAL_STATES}
+        return {**self._task_result(task), "wait_strategy": strategy, "timed_out": task.state not in TURN_END_STATES}
 
     async def task_cancel(self, task_id: str, *, timeout: float = 10.0) -> dict[str, Any]:
         task = self.store.get_task(task_id)
         if not task:
             raise BridgeError("task_not_found", "bridge task not found")
         task = self.store.update_task(task.bridge_task_id, cancel_requested=True)
-        if task.state in TERMINAL_STATES:
+        if task.state in TURN_END_STATES:
             return {
                 **self._task_result(task),
                 "cancel_sent": False,

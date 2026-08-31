@@ -5,12 +5,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from fake_a2a import FakeA2AServer
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 
 @pytest.mark.asyncio
-async def test_mcp_stdio_initialize_list_and_all_tools(fake_a2a, tmp_path: Path) -> None:
+async def test_mcp_stdio_initialize_list_and_all_tools(fake_a2a: FakeA2AServer, tmp_path: Path) -> None:
     env = os.environ.copy()
     env.update(
         {

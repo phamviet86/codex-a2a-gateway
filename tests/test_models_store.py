@@ -14,6 +14,14 @@ def test_settings_only_accept_loopback(tmp_path: Path) -> None:
     assert settings.card_url.endswith("/.well-known/agent-card.json")
     with pytest.raises(ValueError):
         Settings(endpoint="https://example.com")
+    with pytest.raises(ValueError, match="PUBLIC_URL requires"):
+        Settings(inbound_public_url="https://gateway.example.com")
+    exposed = Settings(
+        inbound_host="0.0.0.0",
+        inbound_public_url="https://gateway.example.com",
+        inbound_token="secret",
+    )
+    assert exposed.advertised_url == "https://gateway.example.com"
 
 
 def test_context_mapping_close_and_turn_budget(tmp_path: Path) -> None:

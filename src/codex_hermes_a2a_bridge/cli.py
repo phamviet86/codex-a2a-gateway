@@ -6,6 +6,7 @@ import json
 import sys
 
 from .core import BridgeService
+from .gateway import run_gateway
 from .models import TERMINAL_STATES, BridgeError
 from .server import run_stdio
 from .settings import Settings
@@ -41,9 +42,10 @@ async def _smoke(message: str, conversation_key: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Codex MCP to Hermes A2A bridge")
+    parser = argparse.ArgumentParser(description="Bidirectional Codex and A2A bridge")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="Run the MCP server over stdio")
+    sub.add_parser("gateway", help="Run the standalone inbound A2A HTTP gateway")
     sub.add_parser("doctor", help="Check bridge state, Hermes health, and Agent Card")
     smoke = sub.add_parser("smoke", help="Send one explicit harmless live test message")
     smoke.add_argument("message")
@@ -56,6 +58,9 @@ def main() -> None:
     command = args.command or "serve"
     if command == "serve":
         run_stdio()
+        return
+    if command == "gateway":
+        run_gateway()
         return
     if command == "doctor":
         raise SystemExit(asyncio.run(_status()))

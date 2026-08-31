@@ -23,7 +23,7 @@ mcp = MCPServer(
     "codex-hermes-a2a-bridge",
     description="Local MCP bridge from Codex to the Hermes default agent over A2A v1.0.",
     instructions=INSTRUCTIONS,
-    version="0.1.1",
+    version="0.2.0",
     log_level="WARNING",
 )
 
