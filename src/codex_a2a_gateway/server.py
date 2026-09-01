@@ -6,6 +6,7 @@ from mcp import types
 from mcp.server import MCPServer
 from pydantic import Field
 
+from . import __version__
 from .core import BridgeService
 from .models import BridgeError
 from .settings import Settings
@@ -23,7 +24,7 @@ mcp = MCPServer(
     "codex-a2a-gateway",
     description="Outbound MCP adapter from Codex to the Hermes default agent over A2A v1.0.",
     instructions=INSTRUCTIONS,
-    version="0.2.0",
+    version=__version__,
     log_level="WARNING",
 )
 

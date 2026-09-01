@@ -15,6 +15,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from . import __version__
 from .inbound import InboundService
 from .models import BridgeError
 from .settings import Settings
@@ -98,7 +99,7 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                 "Generic local A2A gateway backed by Codex. Supports text conversations, streaming, task lookup, "
                 "and best-effort cancellation; push notifications are not implemented."
             ),
-            "version": "0.2.0",
+            "version": __version__,
             "supportedInterfaces": [
                 {
                     "url": settings.advertised_url + "/",

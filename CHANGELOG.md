@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Đồng bộ metadata runtime với version package thay vì hard-code `0.2.0`, gồm MCP server, Agent Card,
+  `doctor`, Codex App Server client metadata và outbound User-Agent.
+- Sửa quickstart release để luôn dùng executable đã cài, thêm checksum verification, lifecycle A2A
+  generic có submit/poll/continue/cancel và bảng troubleshooting tập trung.
+
 ## 0.2.1 — 2026-09-01
 
 - Thêm hướng dẫn triển khai từ GitHub Release trên máy sạch, gồm prerequisite, đăng ký MCP, cấu hình Hermes, nâng cấp, rollback và gỡ cài đặt không xóa state.

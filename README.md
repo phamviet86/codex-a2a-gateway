@@ -92,6 +92,15 @@ Contributors should install development tools with:
 
 ## Quickstart 1: Codex → Hermes
 
+These quickstarts assume the release-wheel installation above. Define the installed paths once in each shell:
+
+```bash
+gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
+gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
+```
+
+For a source checkout, use its `.venv/bin/codex-a2a-gateway` explicitly instead; do not mix the two installations against one state file.
+
 Enable the native Hermes A2A platform using the current [Hermes A2A guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a):
 
 ```bash
@@ -102,10 +111,10 @@ hermes gateway run     # foreground process on 127.0.0.1:9900
 In another terminal, verify the peer and register the MCP server:
 
 ```bash
-.venv/bin/codex-a2a-gateway doctor
+"$gateway_bin" doctor
 
 codex mcp add codex-a2a-gateway -- \
-  /absolute/path/to/codex-a2a-gateway/.venv/bin/codex-a2a-gateway serve
+  "$gateway_bin" serve
 codex mcp get codex-a2a-gateway
 ```
 
@@ -124,7 +133,7 @@ Start the inbound gateway against the workspace Codex should operate on:
 
 ```bash
 CODEX_WORKSPACE_ROOT=/absolute/path/to/workspace \
-  .venv/bin/codex-a2a-gateway gateway
+  "$gateway_bin" gateway
 ```
 
 Confirm discovery:
@@ -165,7 +174,7 @@ Outbound calls map a stable Codex `conversation_key` to a Hermes A2A `contextId`
 
 For a mutating outbound request, provide an `idempotency_key`. If a network timeout leaves the result ambiguous, query or wait on the existing task. The gateway deliberately does not blindly resend.
 
-See [architecture v0.2](docs/architecture-v0.2.md) and the [inbound operations guide](docs/inbound-gateway.md).
+See [architecture v0.2](docs/architecture-v0.2.md), the [inbound operations guide](docs/inbound-gateway.md), and the runnable generic-client lifecycle in the [deployment guide](docs/deployment.md#5-generic-a2a-client-lifecycle).
 
 ## Outbound MCP tools
 
@@ -191,7 +200,7 @@ Safety-critical settings:
 | `HERMES_A2A_TOKEN` | empty | Optional outbound bearer token, read from env only. |
 | `CODEX_A2A_GATEWAY_STATE_PATH` | platform state directory | SQLite file; mode `0600`. |
 | `CODEX_A2A_GATEWAY_MAX_TURNS` | `5` | Per-context anti-loop budget. |
-| `CODEX_A2A_GATEWAY_MAX_CONCURRENCY` | `4` | Shared outbound/inbound execution limit. |
+| `CODEX_A2A_GATEWAY_MAX_CONCURRENCY` | `4` | Per-process execution limit. The MCP adapter and inbound gateway are separate processes, so this is not a global cap across both. |
 | `CODEX_A2A_HOST` / `CODEX_A2A_PORT` | `127.0.0.1` / `9910` | Inbound bind. |
 | `CODEX_A2A_BEARER_TOKEN` | empty | Required before a non-loopback bind/public URL. |
 | `CODEX_A2A_GATEWAY_BACKEND` | `app-server` | `app-server` or explicit `cli`. |

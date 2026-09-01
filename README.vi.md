@@ -39,6 +39,15 @@ python3.11 -m venv .venv
 
 ## Quickstart: Codex → Hermes
 
+Các quickstart này dùng bản cài release wheel ở trên. Khai báo đường dẫn đã cài một lần trong mỗi shell:
+
+```bash
+gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
+gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
+```
+
+Nếu chạy từ source checkout thì dùng rõ `.venv/bin/codex-a2a-gateway` của checkout đó; không trộn hai bản cài với cùng một state file.
+
 Bật A2A native của Hermes:
 
 ```bash
@@ -49,10 +58,10 @@ hermes gateway run     # chạy foreground tại 127.0.0.1:9900
 Trong terminal khác:
 
 ```bash
-.venv/bin/codex-a2a-gateway doctor
+"$gateway_bin" doctor
 
 codex mcp add codex-a2a-gateway -- \
-  /duong-dan-tuyet-doi/codex-a2a-gateway/.venv/bin/codex-a2a-gateway serve
+  "$gateway_bin" serve
 codex mcp get codex-a2a-gateway
 ```
 
@@ -64,7 +73,7 @@ Chạy gateway với workspace mà Codex được phép thao tác:
 
 ```bash
 CODEX_WORKSPACE_ROOT=/duong-dan-tuyet-doi/toi/workspace \
-  .venv/bin/codex-a2a-gateway gateway
+  "$gateway_bin" gateway
 ```
 
 Kiểm tra Agent Card:
@@ -99,6 +108,8 @@ a2a_agents:
 
 Chỉ bật `hermes tools enable a2a --platform a2a` khi thật sự cần agent chaining, để tránh vòng lặp Hermes ↔ Codex không chủ ý.
 
+Với A2A client generic, xem flow gửi task → lưu `taskId`/`contextId` → `GetTask`/tiếp tục/hủy ở [deployment guide](docs/deployment.md#5-generic-a2a-client-lifecycle). Mỗi `messageId` phải mới; chỉ dùng `message.taskId` khi task trả `INPUT_REQUIRED`.
+
 ## Cách quản lý phiên
 
 - Chiều outbound: `conversation_key` của Codex được ánh xạ tới Hermes `contextId`.
@@ -127,7 +138,7 @@ Chỉ bật `hermes tools enable a2a --platform a2a` khi thật sự cần agent
 | `CODEX_A2A_GATEWAY_BACKEND` | `app-server` | Backend `app-server` hoặc `cli`. |
 | `CODEX_WORKSPACE_ROOT` | cwd | Workspace Codex xử lý task. |
 
-Xem [.env.example](.env.example) để biết cấu hình đầy đủ. Tên executable cũ `codex-hermes-a2a-bridge` và các biến `HERMES_BRIDGE_*`/`CODEX_BRIDGE_*` được giữ làm alias tương thích trong v0.2.
+`CODEX_A2A_GATEWAY_MAX_CONCURRENCY=4` là giới hạn theo từng process, không phải global cap giữa MCP adapter và inbound gateway chạy tách biệt. Xem [.env.example](.env.example) để biết cấu hình đầy đủ. Tên executable cũ `codex-hermes-a2a-bridge` và các biến `HERMES_BRIDGE_*`/`CODEX_BRIDGE_*` được giữ làm alias tương thích trong v0.2.
 
 ## Kiểm thử
 

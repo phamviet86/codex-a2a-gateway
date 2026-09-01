@@ -5,6 +5,7 @@ import uuid
 from contextlib import suppress
 from typing import Any, Literal, cast
 
+from . import __version__
 from .a2a import A2AClient
 from .models import (
     TERMINAL_STATES,
@@ -129,7 +130,7 @@ class BridgeService:
             error = exc.as_result()["error"]
         return {
             "ok": error is None,
-            "bridge": {"version": "0.2.0", "transport": "stdio", "state": self.store.counts()},
+            "bridge": {"version": __version__, "transport": "stdio", "state": self.store.counts()},
             "hermes": {
                 "endpoint": self.settings.endpoint,
                 "reachable": error is None,

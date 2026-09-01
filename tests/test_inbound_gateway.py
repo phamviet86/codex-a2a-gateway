@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
+from codex_a2a_gateway import __version__
 from codex_a2a_gateway.codex_backend import BackendResult
 from codex_a2a_gateway.gateway import create_gateway_app
 from codex_a2a_gateway.inbound import InboundService
@@ -259,6 +260,7 @@ async def test_agent_card_and_inbound_a2a_lifecycle(tmp_path: Path) -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:9910") as client:
         card = (await client.get("/.well-known/agent-card.json")).json()
+        assert card["version"] == __version__
         assert card["supportedInterfaces"][0]["protocolVersion"] == "1.0"
         assert "protocolVersion" not in card and "url" not in card and "preferredTransport" not in card
         assert card["capabilities"] == {"streaming": True, "pushNotifications": False}

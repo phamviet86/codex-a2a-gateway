@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from . import __version__
 from .models import A2A_STATE_MAP, A2AError, A2ATaskResult
 from .settings import Settings, is_loopback_url
 
@@ -22,7 +23,7 @@ class A2AClient:
             write=10.0,
             pool=5.0,
         )
-        headers = {"A2A-Version": "1.0", "User-Agent": "codex-a2a-gateway/0.2.0"}
+        headers = {"A2A-Version": "1.0", "User-Agent": f"codex-a2a-gateway/{__version__}"}
         if settings.token:
             headers["Authorization"] = f"Bearer {settings.token}"
         self._client = httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=False)

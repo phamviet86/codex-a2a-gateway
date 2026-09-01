@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fake_a2a import FakeA2AServer
 
+from codex_a2a_gateway import __version__
 from codex_a2a_gateway.a2a import A2AClient
 from codex_a2a_gateway.core import BridgeService
 from codex_a2a_gateway.models import BridgeError
@@ -24,6 +25,7 @@ async def test_a2a_and_all_service_tool_operations(fake_a2a: FakeA2AServer, tmp_
     try:
         status = await service.status()
         assert status["ok"] and status["hermes"]["agent_card"]["name"] == "Fake Hermes"
+        assert status["bridge"]["version"] == __version__
 
         first = await service.chat("hello", conversation_key="conv", mode="sync", idempotency_key="one")
         assert first["state"] == "completed" and "turn=1" in first["result"]

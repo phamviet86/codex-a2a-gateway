@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from codex_a2a_gateway import __version__
 from codex_a2a_gateway.codex_backend import AppServerBackend, CLIBackend
 
 
@@ -98,6 +99,7 @@ async def test_app_server_stdio_protocol(monkeypatch: pytest.MonkeyPatch, tmp_pa
         "thread/start",
         "turn/start",
     ]
+    assert process.stdin.frames[0]["params"]["clientInfo"]["version"] == __version__
 
 
 @pytest.mark.asyncio

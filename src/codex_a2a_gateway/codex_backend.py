@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from . import __version__
 from .models import BridgeError, TaskState
 
 StartedCallback = Callable[[str, str | None], Awaitable[None]]
@@ -168,7 +169,7 @@ class AppServerBackend(_SubprocessBackend):
                             "clientInfo": {
                                 "name": "codex-a2a-gateway",
                                 "title": "Codex A2A Gateway",
-                                "version": "0.2.0",
+                                "version": __version__,
                             },
                             "capabilities": {"experimentalApi": False},
                         },
