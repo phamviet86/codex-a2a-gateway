@@ -1,11 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 — 2026-09-01
 
 - Đồng bộ metadata runtime với version package thay vì hard-code `0.2.0`, gồm MCP server, Agent Card,
   `doctor`, Codex App Server client metadata và outbound User-Agent.
-- Sửa quickstart release để luôn dùng executable đã cài, thêm checksum verification, lifecycle A2A
-  generic có submit/poll/continue/cancel và bảng troubleshooting tập trung.
+- Sửa quickstart release để luôn dùng executable đã cài, thêm workflow release asset chuẩn wheel + sdist +
+  `SHA256SUMS`, lifecycle A2A generic có submit/poll/continue/cancel và bảng troubleshooting tập trung.
 
 ## 0.2.1 — 2026-09-01
 

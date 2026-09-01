@@ -74,6 +74,8 @@ build_dir=$(mktemp -d)
 .venv/bin/python -m twine check "$build_dir"/*
 .venv/bin/python scripts/check_dist.py "$build_dir"
 .venv/bin/python scripts/check_wheel_install.py "$build_dir"/*.whl
+.venv/bin/python scripts/write_sha256sums.py "$build_dir"
+.venv/bin/python scripts/write_sha256sums.py --check "$build_dir"
 ```
 
 The clean-wheel check is required on both macOS and Linux CI. Keep deployment commands in `docs/deployment.md` installable without a Git clone, and never claim an operating system as supported until that path has passed CI or an equivalent clean-host test.

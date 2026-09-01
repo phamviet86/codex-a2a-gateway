@@ -2,7 +2,7 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Public beta · v0.2.1**
+**Public beta · v0.2.2**
 
 `codex-a2a-gateway` giúp Codex giao tiếp hai chiều theo chuẩn A2A v1.0:
 
@@ -22,7 +22,7 @@ Trên máy vận hành, cài trực tiếp release wheel vào virtualenv riêng,
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 

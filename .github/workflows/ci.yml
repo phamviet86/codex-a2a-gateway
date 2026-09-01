@@ -42,3 +42,5 @@ jobs:
           python -m twine check dist/*
           python scripts/check_dist.py dist
           python scripts/check_wheel_install.py dist/*.whl
+          python scripts/write_sha256sums.py dist
+          python scripts/write_sha256sums.py --check dist

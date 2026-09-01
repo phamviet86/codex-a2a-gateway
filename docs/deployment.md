@@ -30,42 +30,43 @@ hermes --version
 
 Hermes is optional if the machine only exposes Codex to a different A2A client.
 
-## 2. Install release v0.2.1
+## 2. Install release v0.2.2
 
 Use a dedicated virtual environment so the gateway does not modify the system Python:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 
 Expected version output:
 
 ```text
-codex-a2a-gateway 0.2.1
+codex-a2a-gateway 0.2.2
 ```
 
-For a higher-assurance installation, download the wheel, compare it to the SHA-256 published in the v0.2.1 release notes, then install the verified local file. This works on macOS (`shasum`) and Linux (`sha256sum`):
+For a higher-assurance installation, download the wheel, source distribution, and `SHA256SUMS` release asset, verify the downloaded files against that manifest, then install the verified wheel. This works on macOS (`shasum`) and Linux (`sha256sum`):
 
 ```bash
 release_dir=$(mktemp -d)
-wheel="$release_dir/codex_a2a_gateway-0.2.1-py3-none-any.whl"
-expected_sha256=502954597567d84335769a6ddb253f71fd7774cd91bc92d53517ea12f75426dc
+release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2"
+wheel="codex_a2a_gateway-0.2.2-py3-none-any.whl"
+sdist="codex_a2a_gateway-0.2.2.tar.gz"
 
-curl --fail --location --output "$wheel" \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
+curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
+curl --fail --location --output "$release_dir/SHA256SUMS" "$release_url/SHA256SUMS"
 if command -v shasum >/dev/null 2>&1; then
-  actual_sha256=$(shasum -a 256 "$wheel" | awk '{print $1}')
+  (cd "$release_dir" && shasum -a 256 -c SHA256SUMS)
 else
-  actual_sha256=$(sha256sum "$wheel" | awk '{print $1}')
+  (cd "$release_dir" && sha256sum --check SHA256SUMS)
 fi
-test "$actual_sha256" = "$expected_sha256"
-"$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install "$wheel"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install "$release_dir/$wheel"
 ```
 
-If the comparison fails, do not install the file. Delete the temporary directory and download again from the release page; do not substitute a digest from an untrusted source.
+If verification fails, do not install the file. Delete the temporary directory and download again from the release page; do not substitute a manifest or digest from an untrusted source.
 
 ## 3. Register Codex → Hermes MCP
 
@@ -194,18 +195,18 @@ For streaming instead of polling, call `SendStreamingMessage` with the same mess
 
 Stop the foreground gateway and close clients using its MCP process before changing versions.
 
-Upgrade or reinstall v0.2.1:
+Upgrade or reinstall v0.2.2:
 
 ```bash
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --upgrade --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
 ```
 
-Rollback to v0.2.0 without deleting state:
+Rollback to v0.2.1 without deleting state:
 
 ```bash
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.0/codex_a2a_gateway-0.2.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
 ```
 
 After either operation, run `--version`, `doctor`, and `codex mcp get codex-a2a-gateway` before resuming work.
@@ -223,7 +224,7 @@ The commands above do not delete the SQLite state database. Remove state only af
 
 | Symptom | Safe check and response |
 |---|---|
-| `--version` is not `0.2.1`, or wheel installation fails | Repeat the checksum-verified install above. Do not use a cached or differently named wheel as a substitute. |
+| `--version` is not `0.2.2`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
 | `doctor` reports Hermes unreachable | Keep `HERMES_A2A_ENDPOINT` on loopback, confirm `hermes gateway run` is active, then rerun `doctor`. Do not weaken the loopback-only endpoint policy to reach an arbitrary remote URL. |
 | Codex does not show the MCP server | Run `codex mcp get codex-a2a-gateway`, verify its command is the installed absolute `$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway` path, then restart or open a new Codex client. Do not start `serve` manually. |
 | Agent Card or `/health` is unavailable | Confirm the foreground `gateway` process is still running and the selected `CODEX_WORKSPACE_ROOT` is accessible. If port 9910 is occupied, choose another loopback `CODEX_A2A_PORT` and update the A2A peer URL together. |

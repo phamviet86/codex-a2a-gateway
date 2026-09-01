@@ -36,7 +36,9 @@ def main() -> int:
             str(python),
             "-c",
             "from importlib.metadata import version; import codex_a2a_gateway; "
-            "print('installed', version('codex-a2a-gateway'), codex_a2a_gateway.__file__)",
+            "installed = version('codex-a2a-gateway'); "
+            "assert installed == codex_a2a_gateway.__version__, (installed, codex_a2a_gateway.__version__); "
+            "print('installed', installed, codex_a2a_gateway.__file__)",
         )
         for command in ("codex-a2a-gateway", "codex-hermes-a2a-bridge"):
             run(str(executable(venv_root, command)), "--help")
