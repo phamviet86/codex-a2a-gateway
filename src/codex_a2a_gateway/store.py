@@ -18,7 +18,7 @@ from .models import (
     now_iso,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Store:
@@ -87,7 +87,8 @@ class Store:
                     hop_count INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    completed_at TEXT
+                    completed_at TEXT,
+                    execution_metadata_json TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_idempotency
@@ -130,6 +131,8 @@ class Store:
                 con.execute("ALTER TABLE tasks ADD COLUMN direction TEXT NOT NULL DEFAULT 'outbound'")
             if "codex_turn_id" not in task_columns:
                 con.execute("ALTER TABLE tasks ADD COLUMN codex_turn_id TEXT")
+            if "execution_metadata_json" not in task_columns:
+                con.execute("ALTER TABLE tasks ADD COLUMN execution_metadata_json TEXT NOT NULL DEFAULT '{}'")
             con.execute(
                 "INSERT OR IGNORE INTO inbound_messages("
                 "message_id,bridge_task_id,context_id,request_fingerprint,created_at) "
@@ -152,6 +155,7 @@ class Store:
             return None
         data = dict(row)
         data["artifacts"] = json.loads(data.pop("artifacts_json") or "[]")
+        data["execution_metadata"] = json.loads(data.pop("execution_metadata_json") or "{}")
         data["cancel_requested"] = bool(data["cancel_requested"])
         return TaskRecord.model_validate(data)
 
@@ -296,8 +300,8 @@ class Store:
                         bridge_task_id,a2a_task_id,context_id,conversation_key,profile,endpoint,
                         request_id,message_id,idempotency_key,request_fingerprint,mode,state,
                         result_text,artifacts_json,error_code,error_message,cancel_requested,hop_count,
-                        created_at,updated_at,completed_at,direction,codex_turn_id
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        created_at,updated_at,completed_at,direction,codex_turn_id,execution_metadata_json
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         task.bridge_task_id,
@@ -323,6 +327,7 @@ class Store:
                         task.completed_at,
                         task.direction,
                         task.codex_turn_id,
+                        json.dumps(task.execution_metadata, ensure_ascii=False),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -401,8 +406,8 @@ class Store:
                         bridge_task_id,a2a_task_id,context_id,conversation_key,profile,endpoint,
                         request_id,message_id,idempotency_key,request_fingerprint,mode,state,
                         result_text,artifacts_json,error_code,error_message,cancel_requested,hop_count,
-                        created_at,updated_at,completed_at,direction,codex_turn_id
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        created_at,updated_at,completed_at,direction,codex_turn_id,execution_metadata_json
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         task.bridge_task_id,
@@ -428,6 +433,7 @@ class Store:
                         task.completed_at,
                         task.direction,
                         task.codex_turn_id,
+                        json.dumps(task.execution_metadata, ensure_ascii=False),
                     ),
                 )
                 con.execute(
@@ -546,6 +552,7 @@ class Store:
         error_message: str | None = None,
         cancel_requested: bool | None = None,
         codex_turn_id: str | None = None,
+        execution_metadata: dict[str, Any] | None = None,
         message_id: str | None = None,
         clear_codex_turn_id: bool = False,
     ) -> TaskRecord:
@@ -579,6 +586,10 @@ class Store:
                 None if clear_codex_turn_id else codex_turn_id if codex_turn_id is not None else current.codex_turn_id
             ),
             "message_id": message_id if message_id is not None else current.message_id,
+            "execution_metadata_json": json.dumps(
+                execution_metadata if execution_metadata is not None else current.execution_metadata,
+                ensure_ascii=False,
+            ),
         }
         with self._lock, self._connect() as con:
             con.execute(
@@ -586,7 +597,8 @@ class Store:
                 UPDATE tasks SET state=:state,a2a_task_id=:a2a_task_id,result_text=:result_text,
                     artifacts_json=:artifacts_json,error_code=:error_code,error_message=:error_message,
                     cancel_requested=:cancel_requested,updated_at=:updated_at,completed_at=:completed_at,
-                    codex_turn_id=:codex_turn_id,message_id=:message_id
+                    codex_turn_id=:codex_turn_id,message_id=:message_id,
+                    execution_metadata_json=:execution_metadata_json
                 WHERE bridge_task_id=:bridge_task_id
                 """,
                 {**values, "bridge_task_id": current.bridge_task_id},

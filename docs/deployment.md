@@ -1,6 +1,6 @@
 # Deploy on another computer
 
-This guide installs `codex-a2a-gateway` from a versioned GitHub release asset without cloning the source repository. The supported beta topology is one local user running Codex, Hermes, and the gateway on the same macOS or Linux computer.
+This guide installs `codex-a2a-gateway` from a versioned GitHub release asset without cloning the source repository. The supported beta topology is one local user running Codex, Hermes, and the gateway on the same macOS or Linux computer. For a concise Vietnamese path that configures and verifies both Codex and Hermes directions, see [Thiết lập Codex + Hermes](setup-codex-hermes.vi.md).
 
 ## Support matrix
 
@@ -30,30 +30,32 @@ hermes --version
 
 Hermes is optional if the machine only exposes Codex to a different A2A client.
 
-## 2. Install release v0.2.2
+## 2. Install release v0.3.0
 
 Use a dedicated virtual environment so the gateway does not modify the system Python:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 
 Expected version output:
 
 ```text
-codex-a2a-gateway 0.2.2
+codex-a2a-gateway 0.3.0
 ```
+
+The published `v0.3.0` wheel includes the durable Hermes plugin, timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
 
 For a higher-assurance installation, download the wheel, source distribution, and `SHA256SUMS` release asset, verify the downloaded files against that manifest, then install the verified wheel. This works on macOS (`shasum`) and Linux (`sha256sum`):
 
 ```bash
 release_dir=$(mktemp -d)
-release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2"
-wheel="codex_a2a_gateway-0.2.2-py3-none-any.whl"
-sdist="codex_a2a_gateway-0.2.2.tar.gz"
+release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0"
+wheel="codex_a2a_gateway-0.3.0-py3-none-any.whl"
+sdist="codex_a2a_gateway-0.3.0.tar.gz"
 
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
 curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
@@ -110,6 +112,27 @@ To let Hermes call this endpoint through its native A2A tools:
 hermes tools enable a2a --platform cli
 ```
 
+### Durable Hermes client
+
+`a2a_call` is Hermes' synchronous convenience tool. The published `v0.3.0` wheel includes this plugin; install it and enable only its separate CLI toolset:
+
+```bash
+gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
+gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
+test -x "$gateway_bin"
+"$gateway_bin" install-hermes-plugin
+hermes plugins enable codex-a2a-gateway
+hermes tools enable codex_a2a --platform cli
+hermes config set plugins.entries.codex-a2a-gateway.settings.endpoint http://127.0.0.1:9910
+hermes config set plugins.entries.codex-a2a-gateway.settings.timeout 30
+```
+
+`codex_a2a_call` submits with `configuration.returnImmediately=true` and persists handle metadata only, not Codex results/artifacts. Use `codex_a2a_get`, `codex_a2a_wait`, `codex_a2a_list`, or `codex_a2a_cancel` on that handle. A timeout becomes `outcome_unknown`; the plugin does not resend and recovers only when the saved `requestMessageId` exactly matches one unbound `ListTasks(contextId)` candidate. Its configured endpoint is validated as loopback-only.
+
+The plugin reads only `plugins.entries.codex-a2a-gateway.settings.endpoint` and `.timeout`; it does not read the native `a2a_agents` peer map. Set these plugin settings explicitly when the Codex gateway uses a non-default loopback port.
+
+The installer destination is `$HERMES_HOME/plugins/codex-a2a-gateway`, defaulting to `~/.hermes/plugins/codex-a2a-gateway`. For `TASK_STATE_INPUT_REQUIRED`, call `codex_a2a_call` with the returned local `task_id` and a new answer; it sends `message.taskId` for the same remote task and rejects a changed model/reasoning preference. Serialize operations on one local handle; concurrent same-handle calls are not supported.
+
 Add the peer to `~/.hermes/config.yaml`:
 
 ```yaml
@@ -120,6 +143,10 @@ a2a_agents:
 ```
 
 The current [Hermes A2A guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a) documents the platform-specific tool enablement and `a2a_agents` peer map. Keep `--platform a2a` disabled unless intentional agent chaining requires an inbound Hermes task to call another peer.
+
+### Execution-preferences extension (Hermes/A2A → Codex only)
+
+The Agent Card advertises an optional A2A extension for `model`, `reasoning_effort`, and `require_exact`. The plugin fetches that card before it sends preferences and fails locally when the exact URI is absent. A sender must negotiate the same extension URI in the `A2A-Extensions` header and `message.extensions`, then put the values in `message.metadata.executionPreferences`. The gateway queries the active Codex App Server `model/list`, applies its receiver-side allowlist/default policy, persists the requested/effective decision, and uses App Server `model`/`effort` on `turn/start`. Exact unsupported values are rejected; non-exact values deterministically fall back or omit a preference. The explicit CLI backend rejects the extension. No Codex → Hermes MCP tool accepts these fields. See the [versioned extension contract](execution-preferences-extension-v1.md).
 
 ## 5. Generic A2A client lifecycle
 
@@ -191,25 +218,62 @@ For streaming instead of polling, call `SendStreamingMessage` with the same mess
 - Treat the database as sensitive: it can contain results, artifacts, mappings, statuses, and minimal error information.
 - A machine migration may copy the stopped database to the same path, but authentication and workspace paths must be configured again on the destination.
 
-## 7. Upgrade, rollback, and uninstall
+## 7. Exact VPS upgrade from v0.2.2 to v0.3.0
 
-Stop the foreground gateway and close clients using its MCP process before changing versions.
-
-Upgrade or reinstall v0.2.2:
+This sequence keeps old and new gateway processes from writing the same SQLite file. Substitute your actual service/supervisor commands; the project does not ship a systemd/launchd unit.
 
 ```bash
-"$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --upgrade --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
+gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
+gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
+state_path="${XDG_STATE_HOME:-$HOME/.local/state}/codex-a2a-gateway/state.sqlite3"
+backup_dir="$HOME/codex-a2a-backups/$(date +%Y%m%d-%H%M%S)"
+
+# Stop the actual foreground/supervised gateway and close Codex clients that own MCP writers.
+# Do not start either version while this upgrade is in progress.
+mkdir -p "$backup_dir"
+test ! -e "$state_path" || cp -p "$state_path" "$backup_dir/state.sqlite3"
+test ! -e "$state_path-wal" || cp -p "$state_path-wal" "$backup_dir/state.sqlite3-wal"
+test ! -e "$state_path-shm" || cp -p "$state_path-shm" "$backup_dir/state.sqlite3-shm"
+
+"$gateway_venv/bin/python" -m pip install --upgrade --force-reinstall \
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
+"$gateway_bin" --version
+"$gateway_bin" install-hermes-plugin --replace
+hermes plugins enable codex-a2a-gateway
+hermes tools enable codex_a2a --platform cli
+hermes config set plugins.entries.codex-a2a-gateway.settings.endpoint http://127.0.0.1:9910
+hermes config set plugins.entries.codex-a2a-gateway.settings.timeout 30
 ```
 
-Rollback to v0.2.1 without deleting state:
+The installer uses `$HERMES_HOME/plugins/codex-a2a-gateway`, or `~/.hermes/plugins/codex-a2a-gateway` when unset. Verify the existing MCP registration first. If it already invokes the same absolute `$gateway_bin serve` command, keep it; do not remove/re-add it merely for the wheel upgrade.
+
+```bash
+codex mcp get codex-a2a-gateway
+# Only if the configured command is absent or differs from "$gateway_bin serve":
+# codex mcp remove codex-a2a-gateway
+# codex mcp add codex-a2a-gateway -- "$gateway_bin" serve
+```
+
+Start the gateway once through your existing foreground/supervisor mechanism, then open a new Codex task. Verify read-only readiness first; the two `smoke` commands below create harmless live tasks and are opt-in:
+
+```bash
+"$gateway_bin" doctor
+curl --fail http://127.0.0.1:9910/health
+curl --fail http://127.0.0.1:9910/.well-known/agent-card.json
+# "$gateway_bin" smoke --conversation-key upgrade-v030-codex-to-hermes 'Reply with exactly HERMES_A2A_OK'
+# Send the harmless generic A2A task in section 5, then poll it to completion.
+```
+
+## 8. Rollback and uninstall
+
+Stop the v0.3.0 gateway and close MCP writers before rollback. Reinstall v0.2.2, then start only that version:
 
 ```bash
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.1/codex_a2a_gateway-0.2.1-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
 ```
 
-After either operation, run `--version`, `doctor`, and `codex mcp get codex-a2a-gateway` before resuming work.
+Do **not** automatically restore the SQLite backup: a backup can be stale relative to completed work. Keep it for operator review and restore only through a separate, deliberate recovery procedure. After either operation, run `--version`, `doctor`, and `codex mcp get codex-a2a-gateway` before resuming work.
 
 To uninstall the executable while preserving state:
 
@@ -220,17 +284,17 @@ codex mcp remove codex-a2a-gateway
 
 The commands above do not delete the SQLite state database. Remove state only after making a separate, explicit retention decision.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Safe check and response |
 |---|---|
-| `--version` is not `0.2.2`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
+| `--version` is not `0.3.0`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
 | `doctor` reports Hermes unreachable | Keep `HERMES_A2A_ENDPOINT` on loopback, confirm `hermes gateway run` is active, then rerun `doctor`. Do not weaken the loopback-only endpoint policy to reach an arbitrary remote URL. |
 | Codex does not show the MCP server | Run `codex mcp get codex-a2a-gateway`, verify its command is the installed absolute `$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway` path, then restart or open a new Codex client. Do not start `serve` manually. |
 | Agent Card or `/health` is unavailable | Confirm the foreground `gateway` process is still running and the selected `CODEX_WORKSPACE_ROOT` is accessible. If port 9910 is occupied, choose another loopback `CODEX_A2A_PORT` and update the A2A peer URL together. |
 | An inbound task fails before a Codex reply | Confirm `codex --version`, sign-in, and workspace access. Keep `app-server` as the default backend; `cli` is only an explicit compatibility mode and does not support interactive input-required handling. |
 | A task is ambiguous after a timeout or restart | Query `GetTask`/`ListTasks` with the saved IDs. Do not resend a mutating message; the gateway records conservative recovery state and may require replay of the original `messageId` only for a task that never reached the backend. |
 
-## Why this beta uses host-native processes
+## Why this release uses host-native processes
 
-Codex App Server and the Hermes peer are local CLI processes with user authentication, workspace permissions, and persistent host state. Containerizing only the Python gateway would still require mounting credentials, workspaces, sockets or executables, and state, while weakening the simple loopback trust boundary. A container image may be added later for a separately designed remote-service topology; it is not the recommended local deployment for v0.2.x.
+Codex App Server and the Hermes peer are local CLI processes with user authentication, workspace permissions, and persistent host state. Containerizing only the Python gateway would still require mounting credentials, workspaces, sockets or executables, and state, while weakening the simple loopback trust boundary. A container image may be added later for a separately designed remote-service topology; it is not the recommended local deployment for v0.3.x.

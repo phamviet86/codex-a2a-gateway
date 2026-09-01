@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+import shutil
 import sys
+import tempfile
+from importlib import resources
+from pathlib import Path
 
 from . import __version__
 from .core import BridgeService
@@ -52,7 +57,60 @@ def build_parser() -> argparse.ArgumentParser:
     smoke = sub.add_parser("smoke", help="Send one explicit harmless live test message")
     smoke.add_argument("message")
     smoke.add_argument("--conversation-key", default="bridge-cli-smoke")
+    plugin = sub.add_parser(
+        "install-hermes-plugin",
+        help="Install the bundled durable Hermes -> Codex A2A client plugin",
+    )
+    plugin.add_argument(
+        "--replace", action="store_true", help="Replace a different existing plugin at this exact target"
+    )
     return parser
+
+
+def _same_tree(left: Path, right: Path) -> bool:
+    if not right.is_dir():
+        return False
+    left_files = sorted(path.relative_to(left) for path in left.rglob("*") if path.is_file())
+    right_files = sorted(path.relative_to(right) for path in right.rglob("*") if path.is_file())
+    return left_files == right_files and all(
+        (left / path).read_bytes() == (right / path).read_bytes() for path in left_files
+    )
+
+
+def _install_hermes_plugin(*, replace: bool) -> int:
+    configured_home = os.environ.get("HERMES_HOME")
+    hermes_home = Path(configured_home).expanduser() if configured_home else Path.home() / ".hermes"
+    destination = hermes_home / "plugins" / "codex-a2a-gateway"
+    destination_parent = destination.parent
+    destination_parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with resources.as_file(resources.files("codex_a2a_gateway.hermes_plugin") / "asset") as source:
+        if destination.exists() and _same_tree(source, destination):
+            print(f"Hermes plugin already installed: {destination}")
+            return 0
+        if destination.exists() and not replace:
+            print(
+                f"Refusing to replace existing plugin at {destination}; rerun with --replace after review.",
+                file=sys.stderr,
+            )
+            return 2
+        with tempfile.TemporaryDirectory(prefix="codex-a2a-plugin-", dir=destination_parent) as temporary:
+            staged = Path(temporary) / "codex-a2a-gateway"
+            shutil.copytree(source, staged)
+            backup = destination_parent / ".codex-a2a-gateway.previous"
+            if backup.exists():
+                shutil.rmtree(backup)
+            if destination.exists():
+                destination.replace(backup)
+            try:
+                staged.replace(destination)
+            except Exception:
+                if backup.exists() and not destination.exists():
+                    backup.replace(destination)
+                raise
+            if backup.exists():
+                shutil.rmtree(backup)
+    print(f"Installed Hermes plugin: {destination}")
+    return 0
 
 
 def main() -> None:
@@ -68,6 +126,8 @@ def main() -> None:
         raise SystemExit(asyncio.run(_status()))
     if command == "smoke":
         raise SystemExit(asyncio.run(_smoke(args.message, args.conversation_key)))
+    if command == "install-hermes-plugin":
+        raise SystemExit(_install_hermes_plugin(replace=args.replace))
     raise SystemExit(2)
 
 

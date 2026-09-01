@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-09-01
+
+- Add the bundled Hermes `codex_a2a` client plugin: durable handle-only state, loopback enforcement, asynchronous submit/poll/cancel, exact message-id recovery, `INPUT_REQUIRED` continuation, and no blind resend after an ambiguous result.
+- Add receiver-controlled Hermes/A2A → Codex model/reasoning preferences through a negotiated Agent Card extension. App Server validates the live model catalog and persists requested/effective decisions; the CLI backend rejects the extension.
+- Make the installer honor `HERMES_HOME`, reject redirects, preflight Agent Card extension support, and document safe single-handle serialization and upgrade/rollback operations.
+
 ## 0.2.2 — 2026-09-01
 
 - Đồng bộ metadata runtime với version package thay vì hard-code `0.2.0`, gồm MCP server, Agent Card,

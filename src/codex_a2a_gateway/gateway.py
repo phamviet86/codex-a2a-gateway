@@ -28,6 +28,9 @@ METHOD_ALIASES = {
     "tasks/list": "ListTasks",
 }
 PART_CONTENT_MEMBERS = {"text", "raw", "url", "data", "file"}
+EXECUTION_PREFERENCES_EXTENSION_URI = (
+    "https://github.com/phamviet86/codex-a2a-gateway/blob/main/docs/execution-preferences-extension-v1.md"
+)
 
 
 def _rpc_result(request_id: Any, result: Any) -> dict[str, Any]:
@@ -79,6 +82,66 @@ def _message_input(params: dict[str, Any]) -> tuple[str, str | None, str, str | 
     return "\n".join(text_parts), context_id, message_id, task_id
 
 
+def _execution_preferences(params: dict[str, Any], settings: Settings, extensions_header: str) -> dict[str, Any]:
+    """Parse the negotiated A2A extension; App Server validates its catalog."""
+    message = params.get("message")
+    if not isinstance(message, dict):
+        return {}
+    message_extensions = message.get("extensions")
+    metadata = message.get("metadata")
+    has_extension_data = isinstance(metadata, dict) and "executionPreferences" in metadata
+    header_uris = {item.strip() for item in extensions_header.split(",") if item.strip()}
+    message_advertises_ours = isinstance(message_extensions, list) and (
+        EXECUTION_PREFERENCES_EXTENSION_URI in message_extensions
+    )
+    if (
+        not has_extension_data
+        and EXECUTION_PREFERENCES_EXTENSION_URI not in header_uris
+        and not message_advertises_ours
+    ):
+        # Other A2A extensions are owned by their respective peers.  This
+        # gateway ignores them unless they attempt to invoke ours.
+        return {}
+    if not isinstance(message_extensions, list) or not all(isinstance(item, str) for item in message_extensions):
+        raise BridgeError("invalid_extension", "message.extensions must be a list of extension URIs")
+    if EXECUTION_PREFERENCES_EXTENSION_URI not in header_uris:
+        raise BridgeError("invalid_extension", "A2A-Extensions must advertise the execution-preferences URI")
+    if EXECUTION_PREFERENCES_EXTENSION_URI not in message_extensions:
+        raise BridgeError("invalid_extension", "message.extensions must advertise the execution-preferences URI")
+    if not isinstance(metadata, dict):
+        raise BridgeError("invalid_extension", "message.metadata must be an object")
+    extension = metadata.get("executionPreferences")
+    if extension is None:
+        raise BridgeError("invalid_extension", "message.metadata.executionPreferences is required")
+    if settings.backend != "app-server":
+        raise BridgeError(
+            "execution_preferences_unsupported",
+            "Model and reasoning preferences require the App Server backend.",
+        )
+    if not isinstance(extension, dict):
+        raise BridgeError("invalid_extension", "execution-preferences extension must be an object")
+    model = extension.get("model")
+    effort = extension.get("reasoning_effort", extension.get("reasoningEffort"))
+    require_exact = extension.get("require_exact", extension.get("requireExact", False))
+    if model is not None and (not isinstance(model, str) or not 1 <= len(model.strip()) <= 200):
+        raise BridgeError("invalid_extension", "extension model must be a non-empty string up to 200 characters")
+    if effort is not None and (not isinstance(effort, str) or not 1 <= len(effort.strip()) <= 64):
+        raise BridgeError(
+            "invalid_extension", "extension reasoning_effort must be a non-empty string up to 64 characters"
+        )
+    if not isinstance(require_exact, bool):
+        raise BridgeError("invalid_extension", "extension require_exact must be a boolean")
+    if model is None and effort is None:
+        raise BridgeError("invalid_extension", "execution-preferences extension requires model or reasoning_effort")
+    return {
+        "requested": {
+            "model": model.strip() if isinstance(model, str) else None,
+            "reasoningEffort": effort.strip() if isinstance(effort, str) else None,
+            "requireExact": require_exact,
+        }
+    }
+
+
 def create_gateway_app(settings: Settings, *, service: InboundService | None = None) -> Starlette:
     inbound = service or InboundService(settings)
 
@@ -121,6 +184,14 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                 }
             ],
         }
+        if settings.backend == "app-server":
+            payload["capabilities"]["extensions"] = [
+                {
+                    "uri": EXECUTION_PREFERENCES_EXTENSION_URI,
+                    "description": "Receiver-controlled model and reasoning preferences for inbound A2A tasks.",
+                    "required": False,
+                }
+            ]
         if security_schemes:
             payload["securitySchemes"] = security_schemes
             payload["securityRequirements"] = security_requirements
@@ -254,12 +325,18 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
         try:
             if method in {"SendMessage", "SendStreamingMessage"}:
                 text, context_id, message_id, task_id = _message_input(params)
+                execution_preferences = _execution_preferences(
+                    params,
+                    settings,
+                    request.headers.get("a2a-extensions", ""),
+                )
                 subscriber = inbound.create_subscription() if method == "SendStreamingMessage" else None
                 task, _deduplicated = await inbound.submit(
                     text,
                     context_id=context_id,
                     message_id=message_id,
                     task_id=task_id,
+                    execution_preferences=execution_preferences,
                     subscriber=subscriber,
                 )
                 if method == "SendStreamingMessage":

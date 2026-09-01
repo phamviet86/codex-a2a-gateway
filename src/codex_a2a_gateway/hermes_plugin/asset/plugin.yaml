@@ -1,0 +1,18 @@
+name: codex-a2a-gateway
+version: 0.3.0
+description: "Durable, loopback-only A2A task client for a local Codex A2A Gateway."
+author: Codex A2A Gateway contributors
+kind: standalone
+provides_tools:
+  - codex_a2a_call
+  - codex_a2a_get
+  - codex_a2a_wait
+  - codex_a2a_list
+  - codex_a2a_cancel
+config_schema:
+  endpoint:
+    type: string
+    description: "Loopback Codex A2A Gateway URL, default http://127.0.0.1:9910"
+  timeout:
+    type: integer
+    description: "Per-request timeout in seconds, default 30"

@@ -36,8 +36,11 @@ def main() -> int:
             str(python),
             "-c",
             "from importlib.metadata import version; import codex_a2a_gateway; "
+            "from importlib import resources; "
             "installed = version('codex-a2a-gateway'); "
             "assert installed == codex_a2a_gateway.__version__, (installed, codex_a2a_gateway.__version__); "
+            "asset = resources.files('codex_a2a_gateway.hermes_plugin') / 'asset'; "
+            "assert (asset / 'plugin.yaml').is_file() and (asset / 'tools.py').is_file(); "
             "print('installed', installed, codex_a2a_gateway.__file__)",
         )
         for command in ("codex-a2a-gateway", "codex-hermes-a2a-bridge"):

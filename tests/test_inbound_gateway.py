@@ -12,7 +12,7 @@ import pytest
 
 from codex_a2a_gateway import __version__
 from codex_a2a_gateway.codex_backend import BackendResult
-from codex_a2a_gateway.gateway import create_gateway_app
+from codex_a2a_gateway.gateway import EXECUTION_PREFERENCES_EXTENSION_URI, create_gateway_app
 from codex_a2a_gateway.inbound import InboundService
 from codex_a2a_gateway.models import BridgeError, TaskRecord, now_iso, request_fingerprint
 from codex_a2a_gateway.settings import Settings
@@ -26,12 +26,14 @@ class FakeBackend:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.thread_inputs: list[str | None] = []
+        self.execution_preferences: list[dict[str, Any]] = []
         self.canceled = False
 
     async def run(self, **kwargs: Any) -> BackendResult:
         if self.fail:
             raise BridgeError("app_server_closed", "unavailable")
         self.thread_inputs.append(kwargs["thread_id"])
+        self.execution_preferences.append(kwargs["execution_preferences"])
         await kwargs["on_started"]("codex-thread-1", "codex-turn-1")
         await kwargs["on_update"]("Codex reply", False)
         return BackendResult("completed", "Codex reply", "codex-thread-1", "codex-turn-1")
@@ -45,6 +47,14 @@ class FakeBackend:
 class FakeCLIBackend(FakeBackend):
     name = "cli"
     supports_input_required = False
+
+
+class DecisionThenFailBackend(FakeBackend):
+    async def run(self, **kwargs: Any) -> BackendResult:
+        preferences = kwargs["execution_preferences"]
+        preferences["decision"] = {"effective": {"model": "gpt-test", "reasoningEffort": "high"}}
+        await kwargs["on_execution_decision"](preferences)
+        return BackendResult("failed", error_code="turn_failed", error_message="turn failed after selection")
 
 
 class InputThenCompleteBackend(FakeBackend):
@@ -209,6 +219,15 @@ async def test_input_required_continues_same_task_and_infers_context(tmp_path: P
     waiting = await service.wait(first.bridge_task_id)
     assert waiting.state == "input_required"
 
+    with pytest.raises(BridgeError, match="cannot be changed"):
+        await service.submit(
+            "web",
+            context_id=None,
+            message_id="input-preferences-rejected",
+            task_id=first.bridge_task_id,
+            execution_preferences={"requested": {"model": "gpt-test"}},
+        )
+
     continued, deduplicated = await service.submit(
         "web",
         context_id=None,
@@ -263,7 +282,9 @@ async def test_agent_card_and_inbound_a2a_lifecycle(tmp_path: Path) -> None:
         assert card["version"] == __version__
         assert card["supportedInterfaces"][0]["protocolVersion"] == "1.0"
         assert "protocolVersion" not in card and "url" not in card and "preferredTransport" not in card
-        assert card["capabilities"] == {"streaming": True, "pushNotifications": False}
+        assert card["capabilities"]["streaming"] is True
+        assert card["capabilities"]["pushNotifications"] is False
+        assert card["capabilities"]["extensions"][0]["uri"] == EXECUTION_PREFERENCES_EXTENSION_URI
         assert card["securitySchemes"]["bearerAuth"]["httpAuthSecurityScheme"]["scheme"] == "Bearer"
         assert card["securityRequirements"] == [{"schemes": {"bearerAuth": {"list": []}}}]
 
@@ -370,6 +391,98 @@ async def test_agent_card_and_inbound_a2a_lifecycle(tmp_path: Path) -> None:
             headers={"Authorization": "Bearer secret"},
         )
         assert second_page.json()["result"]["tasks"][0]["id"] != page["tasks"][0]["id"]
+    await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_execution_preferences_require_negotiation_and_participate_in_idempotency(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    backend = FakeBackend()
+    service = InboundService(settings, app_backend=backend, cli_backend=FakeCLIBackend())
+    app = create_gateway_app(settings, service=service)
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "SendMessage",
+        "params": {
+            "message": {
+                "messageId": "preference-message",
+                "role": "ROLE_USER",
+                "contextId": "preference-context",
+                "extensions": [EXECUTION_PREFERENCES_EXTENSION_URI],
+                "metadata": {
+                    "executionPreferences": {
+                        "model": "gpt-test",
+                        "reasoning_effort": "high",
+                        "require_exact": True,
+                    }
+                },
+                "parts": [{"text": "hello"}],
+            },
+            "configuration": {"returnImmediately": True},
+        },
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:9910") as client:
+        missing_header = await client.post("/", json=request)
+        assert missing_header.json()["error"]["code"] == -32602
+        response = await client.post("/", json=request, headers={"A2A-Extensions": EXECUTION_PREFERENCES_EXTENSION_URI})
+        task = response.json()["result"]["task"]
+        assert task["metadata"]["requestMessageId"] == "preference-message"
+        completed = await service.wait(task["id"])
+        assert completed.execution_metadata["requested"]["model"] == "gpt-test"
+        assert backend.execution_preferences[-1]["requested"]["reasoningEffort"] == "high"
+
+        changed = json.loads(json.dumps(request))
+        changed["params"]["message"]["metadata"]["executionPreferences"]["model"] = "other-model"
+        conflict = await client.post("/", json=changed, headers={"A2A-Extensions": EXECUTION_PREFERENCES_EXTENSION_URI})
+        assert conflict.json()["error"]["code"] == -32602
+    await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_execution_decision_survives_later_backend_failure(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    service = InboundService(settings, app_backend=DecisionThenFailBackend(), cli_backend=FakeCLIBackend())
+    task, _ = await service.submit(
+        "select then fail",
+        context_id="decision-failure",
+        message_id="decision-failure-message",
+        execution_preferences={"requested": {"model": "gpt-test", "reasoningEffort": "high"}},
+    )
+    failed = await service.wait(task.bridge_task_id)
+    assert failed.state == "failed"
+    assert failed.execution_metadata["decision"]["effective"]["model"] == "gpt-test"
+    await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_unrelated_a2a_extensions_are_ignored(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    backend = FakeBackend()
+    service = InboundService(settings, app_backend=backend, cli_backend=FakeCLIBackend())
+    app = create_gateway_app(settings, service=service)
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "SendMessage",
+        "params": {
+            "message": {
+                "messageId": "other-extension-message",
+                "role": "ROLE_USER",
+                "extensions": ["https://example.invalid/other-extension"],
+                "metadata": {"otherExtension": {"enabled": True}},
+                "parts": [{"text": "hello"}],
+            },
+            "configuration": {"returnImmediately": True},
+        },
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:9910") as client:
+        response = await client.post(
+            "/", json=request, headers={"A2A-Extensions": "https://example.invalid/other-extension"}
+        )
+        task = response.json()["result"]["task"]
+        await service.wait(task["id"])
+    assert backend.execution_preferences == [{}]
     await service.aclose()
 
 

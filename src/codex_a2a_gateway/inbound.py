@@ -56,6 +56,10 @@ class InboundService:
                 workspace=settings.codex_workspace,
                 timeout=settings.codex_timeout,
                 approval_policy=settings.approval_policy,
+                allowed_models=settings.codex_allowed_models,
+                default_model=settings.codex_default_model,
+                allowed_reasoning_efforts=settings.codex_allowed_reasoning_efforts,
+                default_reasoning_effort=settings.codex_default_reasoning_effort,
             ),
             "cli": cli_backend
             or CLIBackend(
@@ -133,8 +137,18 @@ class InboundService:
                     }
                 ],
             }
+        metadata: dict[str, Any] = {}
+        # This non-sensitive correlation value lets a durable client recover
+        # only the task created by its original A2A message, not any task that
+        # happens to share a reused context.
+        if task.message_id:
+            metadata["requestMessageId"] = task.message_id
         if task.error_code:
-            payload["metadata"] = {"errorCode": task.error_code}
+            metadata["errorCode"] = task.error_code
+        if task.execution_metadata:
+            metadata["executionPreferences"] = task.execution_metadata
+        if metadata:
+            payload["metadata"] = metadata
         if history_length is not None and history_length > 0:
             payload["history"] = []
         return payload
@@ -146,6 +160,7 @@ class InboundService:
         context_id: str | None,
         message_id: str,
         task_id: str | None = None,
+        execution_preferences: dict[str, Any] | None = None,
         subscriber: asyncio.Queue[TaskRecord] | None = None,
     ) -> tuple[TaskRecord, bool]:
         message = message.strip()
@@ -170,7 +185,8 @@ class InboundService:
         if not actual_context_id or len(actual_context_id) > 256:
             raise BridgeError("invalid_context_id", "contextId must contain 1 to 256 characters")
         conversation_key = f"inbound:{actual_context_id}"
-        fingerprint = request_fingerprint(message, actual_context_id, "inbound")
+        preference_fingerprint = json.dumps(execution_preferences or {}, sort_keys=True, separators=(",", ":"))
+        fingerprint = request_fingerprint(f"{message}\n{preference_fingerprint}", actual_context_id, "inbound")
         if existing_message:
             continued_id = continued_task.bridge_task_id if continued_task else None
             if (
@@ -187,6 +203,11 @@ class InboundService:
             return await self._resume_deduplicated(existing, message), True
         if continued_task and continued_task.state != TaskState.INPUT_REQUIRED.value:
             raise BridgeError("invalid_task_state", "taskId continuation is only valid for input-required tasks")
+        if continued_task and execution_preferences:
+            raise BridgeError(
+                "execution_preferences_continuation_unsupported",
+                "execution preferences cannot be changed while continuing an input-required task",
+            )
 
         lock = self._context_locks.setdefault(actual_context_id, asyncio.Lock())
         async with lock:
@@ -246,6 +267,7 @@ class InboundService:
                         request_fingerprint=fingerprint,
                         mode="async",
                         direction="inbound",
+                        execution_metadata=execution_preferences or {},
                         created_at=now,
                         updated_at=now,
                     )
@@ -320,14 +342,20 @@ class InboundService:
             )
             await self._notify(updated)
 
+        async def on_execution_decision(preferences: dict[str, Any]) -> None:
+            updated = self.store.update_task(task.bridge_task_id, execution_metadata=preferences)
+            await self._notify(updated)
+
         context = self.store.get_context(context_id=task.context_id)
         return await backend.run(
             task_id=task.bridge_task_id,
             prompt=message,
             thread_id=context.codex_thread_id if context else None,
             message_id=task.message_id,
+            execution_preferences=task.execution_metadata,
             on_started=on_started,
             on_update=on_update,
+            on_execution_decision=on_execution_decision,
         )
 
     async def _run(self, task_id: str, message: str) -> None:
@@ -367,6 +395,7 @@ class InboundService:
                     and self.settings.cli_fallback
                     and latest_context is not None
                     and not latest_context.codex_thread_id
+                    and not task.execution_metadata
                 )
                 if not can_fallback:
                     raise primary_error
@@ -381,6 +410,7 @@ class InboundService:
                     error_code=result.error_code or "",
                     error_message=result.error_message or "",
                     codex_turn_id=result.turn_id,
+                    execution_metadata=current.execution_metadata,
                 )
                 await self._notify(current)
         except asyncio.CancelledError:
@@ -393,6 +423,7 @@ class InboundService:
                     state=TaskState.FAILED.value,
                     error_code=exc.code,
                     error_message=exc.message,
+                    execution_metadata=current.execution_metadata,
                 )
                 await self._notify(current)
         except Exception as exc:
@@ -403,6 +434,7 @@ class InboundService:
                     state=TaskState.FAILED.value,
                     error_code="backend_internal",
                     error_message=f"Codex backend failed: {type(exc).__name__}",
+                    execution_metadata=current.execution_metadata,
                 )
                 await self._notify(current)
 

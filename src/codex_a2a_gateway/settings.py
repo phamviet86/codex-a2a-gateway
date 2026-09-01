@@ -59,6 +59,21 @@ class Settings(BaseModel):
     codex_timeout: float = Field(default=300.0, ge=1.0, le=3600.0)
     approval_policy: str = "never"
     max_request_bytes: int = Field(default=1_048_576, ge=1024, le=16_777_216)
+    # The gateway is the receiver and may narrow the App Server model catalog.
+    # An empty allow-list means "no additional restriction", not "no model".
+    codex_allowed_models: tuple[str, ...] = ()
+    codex_default_model: str = ""
+    codex_allowed_reasoning_efforts: tuple[str, ...] = (
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
+    )
+    codex_default_reasoning_effort: str = ""
 
     @field_validator("endpoint")
     @classmethod
@@ -149,6 +164,8 @@ class Settings(BaseModel):
             "codex_timeout": ("CODEX_A2A_GATEWAY_CODEX_TIMEOUT", "CODEX_BRIDGE_CODEX_TIMEOUT"),
             "approval_policy": ("CODEX_A2A_GATEWAY_APPROVAL_POLICY", "CODEX_BRIDGE_APPROVAL_POLICY"),
             "max_request_bytes": ("CODEX_A2A_MAX_REQUEST_BYTES",),
+            "codex_default_model": ("CODEX_A2A_GATEWAY_DEFAULT_MODEL",),
+            "codex_default_reasoning_effort": ("CODEX_A2A_GATEWAY_DEFAULT_REASONING_EFFORT",),
         }
         for field, env_names in env_map.items():
             for env_name in env_names:
@@ -156,6 +173,13 @@ class Settings(BaseModel):
                 if raw not in (None, ""):
                     values[field] = raw
                     break
+        for field, env_name in {
+            "codex_allowed_models": "CODEX_A2A_GATEWAY_ALLOWED_MODELS",
+            "codex_allowed_reasoning_efforts": "CODEX_A2A_GATEWAY_ALLOWED_REASONING_EFFORTS",
+        }.items():
+            raw = os.environ.get(env_name)
+            if raw is not None:
+                values[field] = tuple(item.strip() for item in raw.split(",") if item.strip())
         return cls.model_validate(values)
 
     @property

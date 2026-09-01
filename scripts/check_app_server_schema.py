@@ -51,6 +51,8 @@ def main() -> int:
         require_fields(root, "v2/ThreadStartParams.json", {"cwd", "approvalPolicy"})
         require_fields(root, "v2/ThreadResumeParams.json", {"threadId"})
         require_fields(root, "v2/TurnStartParams.json", {"threadId", "input", "clientUserMessageId"})
+        require_fields(root, "v2/TurnStartParams.json", {"model", "effort"})
+        require_fields(root, "v2/ModelListResponse.json", {"data", "nextCursor"})
         require_fields(root, "v2/TurnInterruptParams.json", {"threadId", "turnId"})
         require_method(root, "item/tool/requestUserInput")
         require_method(root, "item/commandExecution/requestApproval")

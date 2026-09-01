@@ -36,6 +36,8 @@ Treat `docs/architecture-v0.2.md`, `docs/inbound-gateway.md`, and the current RE
 - Preserve per-context serialization, bounded admission, and the one-active-writer assumption for each SQLite state file.
 - SQLite migrations must be additive and backward-compatible. Never discard existing context, task, message, or event records.
 - Live tests and `smoke` are opt-in, use harmless prompts, and never run in CI.
+- The bundled Hermes `codex_a2a` plugin is the reliable Hermes → Codex client path. Keep its endpoint loopback-only, persist only task/context handles in `ctx.state`, submit with `returnImmediately`, and never resend after an ambiguous result. The built-in Hermes `a2a_call` remains synchronous.
+- Execution preferences are inbound-only and require the negotiated Agent Card extension (`A2A-Extensions`, `message.extensions`, and `message.metadata.executionPreferences`). Query App Server `model/list`; receiver policy may narrow that catalog but must not invent support. Persist requested/effective decisions, send only `model` and `effort` to `turn/start`, and reject the extension in CLI mode.
 
 ## Compatibility policy
 

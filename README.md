@@ -5,7 +5,7 @@
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
-**Public beta · v0.2.2**
+**Public beta · v0.3.0**
 
 English | [Tiếng Việt](README.vi.md)
 
@@ -17,6 +17,8 @@ English | [Tiếng Việt](README.vi.md)
 Hermes Agent is the first verified peer, not the product boundary. The inbound endpoint uses portable A2A v1.0 operations and can be called by other compliant clients.
 
 > **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
+
+> **Version scope:** the published `v0.3.0` wheel includes the durable Hermes client, two-way timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
 
 ## Architecture
 
@@ -37,6 +39,7 @@ The MCP server and inbound gateway are separate processes. They share durable SQ
 - App Server approval and user-input requests mapped to `TASK_STATE_INPUT_REQUIRED`.
 - Loopback defaults, bearer authentication for non-loopback inbound exposure, request limits, and bounded admission.
 - Explicit CLI compatibility backend using `codex exec --json`.
+- Bundled Hermes `codex_a2a` plugin for durable Hermes → Codex task handles, polling, recovery, cancellation, and `INPUT_REQUIRED` continuation.
 
 Known limitations:
 
@@ -46,6 +49,7 @@ Known limitations:
 - Cancellation is best-effort and never proves that upstream computation stopped.
 - Hermes task storage is currently in memory; the gateway uses conservative local recovery after a Hermes restart.
 - One active writer/process set should own a SQLite state file. This is a local single-user integration, not a multi-tenant isolation boundary.
+- The built-in Hermes `a2a_call` is synchronous. Use the bundled `codex_a2a` plugin for reliable long-running Hermes → Codex work; it submits with `returnImmediately` and never blindly resends after a timeout.
 
 ## Compatibility
 
@@ -68,11 +72,11 @@ For an operator machine, install the release wheel into a dedicated virtual envi
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 
-See the complete [deployment guide](docs/deployment.md) for prerequisites, MCP registration, Hermes setup, state migration, upgrades, rollback, and uninstall.
+See the complete [deployment guide](docs/deployment.md) for prerequisites, MCP registration, Hermes setup, state migration, upgrades, rollback, and uninstall. For a guided Vietnamese setup of both Codex and Hermes directions, see [Thiết lập Codex + Hermes](docs/setup-codex-hermes.vi.md).
 
 For a source checkout or contributor environment:
 
@@ -157,6 +161,27 @@ To let Hermes call Codex using Hermes' native outbound A2A tools:
 hermes tools enable a2a --platform cli
 ```
 
+### Durable Hermes client
+
+The published `v0.3.0` wheel ships this plugin. Enable only its dedicated CLI toolset:
+
+```bash
+gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
+gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
+test -x "$gateway_bin"
+"$gateway_bin" install-hermes-plugin
+hermes plugins enable codex-a2a-gateway
+hermes tools enable codex_a2a --platform cli
+hermes config set plugins.entries.codex-a2a-gateway.settings.endpoint http://127.0.0.1:9910
+hermes config set plugins.entries.codex-a2a-gateway.settings.timeout 30
+```
+
+The plugin provides `codex_a2a_call`, `codex_a2a_get`, `codex_a2a_wait`, `codex_a2a_list`, and `codex_a2a_cancel`. It persists handle metadata only—not Codex results or artifacts—submits with `returnImmediately: true`, and marks an ambiguous timeout as `outcome_unknown`. Recovery requires the saved `requestMessageId` to match exactly and exactly one unbound `ListTasks(contextId)` candidate; otherwise it remains unknown. It is loopback-only.
+
+The plugin reads `plugins.entries.codex-a2a-gateway.settings.endpoint` and `.timeout`; it does not read the native `a2a_agents` peer map. Set its endpoint explicitly when the gateway uses a non-default loopback port.
+
+The installer writes to `$HERMES_HOME/plugins/codex-a2a-gateway` (or `~/.hermes/plugins/codex-a2a-gateway` when `HERMES_HOME` is unset). To answer `TASK_STATE_INPUT_REQUIRED`, call `codex_a2a_call` again with the same local `task_id`/handle and a new message; it reuses the remote task and rejects changed model/reasoning preferences. Do not invoke two plugin calls for the same handle concurrently.
+
 Add a peer to `~/.hermes/config.yaml`:
 
 ```yaml
@@ -167,6 +192,10 @@ a2a_agents:
 ```
 
 Do not enable `a2a` tools on the inbound Hermes `a2a` platform unless agent chaining is intentional; both systems have anti-loop limits, but an explicit topology is safer.
+
+### Inbound execution preferences
+
+Only Hermes/A2A → Codex may opt into the advertised execution-preferences extension. The bundled plugin fetches the loopback Agent Card first and sends no preference request unless that exact URI is advertised. The sender must advertise the extension URI in the `A2A-Extensions` HTTP header and `message.extensions`, then place `model`, `reasoning_effort`, and optional `require_exact` in `message.metadata.executionPreferences`. The gateway queries Codex App Server `model/list`, applies receiver policy, persists the requested/effective decision, and starts the turn using App Server `model` and `effort`. `require_exact: true` rejects an unavailable value; otherwise the receiver may deterministically choose its default/fallback and reports that decision in task metadata. The CLI backend rejects this extension rather than pretending to honor it. Codex → Hermes MCP tools do not accept these preferences. See the [versioned extension contract](docs/execution-preferences-extension-v1.md).
 
 ## Sessions and tasks
 
@@ -252,6 +281,8 @@ The gateway uses the old state file automatically when it exists and the new def
 ## Documentation
 
 - [Vietnamese README](README.vi.md)
+- [Vietnamese Codex + Hermes setup](docs/setup-codex-hermes.vi.md)
+- [Vietnamese roadmap and feasibility](docs/roadmap.vi.md)
 - [Deploy on another computer](docs/deployment.md)
 - [Architecture v0.2](docs/architecture-v0.2.md)
 - [Inbound gateway operations](docs/inbound-gateway.md)

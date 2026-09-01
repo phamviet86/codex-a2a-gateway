@@ -163,6 +163,10 @@ class TaskRecord(BaseModel):
     completed_at: str | None = None
     direction: Literal["outbound", "inbound"] = "outbound"
     codex_turn_id: str | None = None
+    # Inbound-only, receiver-controlled execution preference decision.  This
+    # deliberately excludes prompt content and is persisted so a task handle
+    # remains explainable after a restart.
+    execution_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class A2ATaskResult(BaseModel):
