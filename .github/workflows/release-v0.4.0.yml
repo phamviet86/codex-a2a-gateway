@@ -24,21 +24,29 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     env:
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      # Keep the already-created annotated tag on its tested source commit.
+      RELEASE_SHA: 2b022152a9f85a23afa572cb5e6d10fe7dd10b37
+      WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Verify version and build tested commit
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse HEAD)" = "$WORKFLOW_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" "$WORKFLOW_SHA"
+          mkdir "$RUNNER_TEMP/release-source"
+          git archive "$RELEASE_SHA" | tar -x -C "$RUNNER_TEMP/release-source"
+          cd "$RUNNER_TEMP/release-source"
           python -c 'import tomllib; assert tomllib.load(open("pyproject.toml", "rb"))["project"]["version"] == "0.4.0"'
           python -m pip install -e '.[dev]'
           python -m build
@@ -50,4 +58,6 @@ jobs:
       - name: Tag, upload, download-verify and publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/publish_v040.py
+        run: |
+          cd "$RUNNER_TEMP/release-source"
+          python "$GITHUB_WORKSPACE/scripts/publish_v040.py"
