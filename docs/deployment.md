@@ -30,32 +30,32 @@ hermes --version
 
 Hermes is optional if the machine only exposes Codex to a different A2A client.
 
-## 2. Install release v0.3.0
+## 2. Install release v0.4.0
 
 Use a dedicated virtual environment so the gateway does not modify the system Python:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 
 Expected version output:
 
 ```text
-codex-a2a-gateway 0.3.0
+codex-a2a-gateway 0.4.0
 ```
 
-The published `v0.3.0` wheel includes the durable Hermes plugin, timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
+The published `v0.4.0` wheel includes the durable Hermes plugin, timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
 
 For a higher-assurance installation, download the wheel, source distribution, and `SHA256SUMS` release asset, verify the downloaded files against that manifest, then install the verified wheel. This works on macOS (`shasum`) and Linux (`sha256sum`):
 
 ```bash
 release_dir=$(mktemp -d)
-release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0"
-wheel="codex_a2a_gateway-0.3.0-py3-none-any.whl"
-sdist="codex_a2a_gateway-0.3.0.tar.gz"
+release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0"
+wheel="codex_a2a_gateway-0.4.0-py3-none-any.whl"
+sdist="codex_a2a_gateway-0.4.0.tar.gz"
 
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
 curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
@@ -114,7 +114,7 @@ hermes tools enable a2a --platform cli
 
 ### Durable Hermes client
 
-`a2a_call` is Hermes' synchronous convenience tool. The published `v0.3.0` wheel includes this plugin; install it and enable only its separate CLI toolset:
+`a2a_call` is Hermes' synchronous convenience tool. The published `v0.4.0` wheel includes this plugin; install it and enable only its separate CLI toolset:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -218,9 +218,9 @@ For streaming instead of polling, call `SendStreamingMessage` with the same mess
 - Treat the database as sensitive: it can contain results, artifacts, mappings, statuses, and minimal error information.
 - A machine migration may copy the stopped database to the same path, but authentication and workspace paths must be configured again on the destination.
 
-## 7. Exact VPS upgrade from v0.2.2 to v0.3.0
+## 7. Exact VPS upgrade from v0.3.0 to v0.4.0
 
-This sequence keeps old and new gateway processes from writing the same SQLite file. Substitute your actual service/supervisor commands; the project does not ship a systemd/launchd unit.
+Schema 5 adds origin, attempt and receipt metadata without discarding existing records. This sequence keeps old and new gateway processes from writing the same SQLite file. Substitute your actual service/supervisor commands; the project does not ship a systemd/launchd unit.
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -236,7 +236,7 @@ test ! -e "$state_path-wal" || cp -p "$state_path-wal" "$backup_dir/state.sqlite
 test ! -e "$state_path-shm" || cp -p "$state_path-shm" "$backup_dir/state.sqlite3-shm"
 
 "$gateway_venv/bin/python" -m pip install --upgrade --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
 "$gateway_bin" --version
 "$gateway_bin" install-hermes-plugin --replace
 hermes plugins enable codex-a2a-gateway
@@ -260,17 +260,17 @@ Start the gateway once through your existing foreground/supervisor mechanism, th
 "$gateway_bin" doctor
 curl --fail http://127.0.0.1:9910/health
 curl --fail http://127.0.0.1:9910/.well-known/agent-card.json
-# "$gateway_bin" smoke --conversation-key upgrade-v030-codex-to-hermes 'Reply with exactly HERMES_A2A_OK'
+# "$gateway_bin" smoke --conversation-key upgrade-v040-codex-to-hermes 'Reply with exactly HERMES_A2A_OK'
 # Send the harmless generic A2A task in section 5, then poll it to completion.
 ```
 
 ## 8. Rollback and uninstall
 
-Stop the v0.3.0 gateway and close MCP writers before rollback. Reinstall v0.2.2, then start only that version:
+Stop the v0.4.0 gateway and close MCP writers before rollback. Reinstall v0.3.0, then start only that version:
 
 ```bash
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.2.2/codex_a2a_gateway-0.2.2-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
 ```
 
 Do **not** automatically restore the SQLite backup: a backup can be stale relative to completed work. Keep it for operator review and restore only through a separate, deliberate recovery procedure. After either operation, run `--version`, `doctor`, and `codex mcp get codex-a2a-gateway` before resuming work.
@@ -288,7 +288,7 @@ The commands above do not delete the SQLite state database. Remove state only af
 
 | Symptom | Safe check and response |
 |---|---|
-| `--version` is not `0.3.0`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
+| `--version` is not `0.4.0`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
 | `doctor` reports Hermes unreachable | Keep `HERMES_A2A_ENDPOINT` on loopback, confirm `hermes gateway run` is active, then rerun `doctor`. Do not weaken the loopback-only endpoint policy to reach an arbitrary remote URL. |
 | Codex does not show the MCP server | Run `codex mcp get codex-a2a-gateway`, verify its command is the installed absolute `$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway` path, then restart or open a new Codex client. Do not start `serve` manually. |
 | Agent Card or `/health` is unavailable | Confirm the foreground `gateway` process is still running and the selected `CODEX_WORKSPACE_ROOT` is accessible. If port 9910 is occupied, choose another loopback `CODEX_A2A_PORT` and update the A2A peer URL together. |

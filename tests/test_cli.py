@@ -10,7 +10,7 @@ from codex_a2a_gateway.server import mcp
 
 
 def test_package_version_is_current_release_version() -> None:
-    assert __version__ == "0.3.0"
+    assert __version__ == "0.4.0"
     assert version("codex-a2a-gateway") == __version__
 
 

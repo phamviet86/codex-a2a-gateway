@@ -1,7 +1,8 @@
-# Job bền vững và trả kết quả (bản chưa phát hành)
+# Job bền vững và trả kết quả (v0.4.0)
 
-Tài liệu này thay thế mô tả recovery của v0.3.0 đối với checkout có bản sửa mới.
-Kiểm chứng hiện tại dùng peer/backend giả lập tại máy phát triển, chưa phải live.
+Hợp đồng v0.4.0 thay thế mô tả recovery của v0.3.0. Bằng chứng giả lập và live VPS
+cô lập nằm trong [báo cáo release](testing-report-v0.4.0.md); không phải tuyên bố
+đã triển khai production.
 
 ## Mô hình đã chốt
 
@@ -63,8 +64,9 @@ Inbound ghi task/message trước khi schedule. Job đã vào backend sau restar
 thành unknown. GetTask/wait có thể đọc `thread/read(includeTurns=true)` bằng **đúng
 thread ID và turn ID đã ACK**, nhận đúng turn kết thúc có đầy đủ items. Không gọi
 thread/resume hoặc turn/start để recovery. Thiếu turn ID, lịch sử thiếu, CLI hoặc
-turn còn chạy thì giữ unknown. Đường này đã đối chiếu schema và test giả lập, chưa
-live; không suy diễn rằng clientUserMessageId tự giải quyết được mất ACK trước turn ID.
+turn còn chạy thì giữ unknown. Đường này đã đối chiếu schema và test giả lập;
+restart live cô lập đã phục hồi đúng turn bị hủy mà không chạy lại. Không suy diễn
+rằng clientUserMessageId tự giải quyết được mất ACK trước turn ID.
 
 Job inbound có bằng chứng chưa vào backend được replay tường minh bằng đúng message
 cũ. Với plugin, lặp nguyên tham số gồm `message_id`, thêm `resume: true`. Plugin đọc

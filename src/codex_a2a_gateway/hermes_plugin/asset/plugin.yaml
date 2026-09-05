@@ -1,5 +1,5 @@
 name: codex-a2a-gateway
-version: 0.3.0
+version: 0.4.0
 description: "Durable, loopback-only A2A task client for a local Codex A2A Gateway."
 author: Codex A2A Gateway contributors
 kind: standalone

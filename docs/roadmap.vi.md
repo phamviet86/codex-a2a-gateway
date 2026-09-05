@@ -1,12 +1,12 @@
 # Roadmap và tính khả thi
 
-**Sự thật phiên bản:** release `v0.3.0` đã gồm plugin durable `codex_a2a`, recovery timeout hai chiều, tiếp tục `INPUT_REQUIRED` và extension model/reasoning cho chiều Hermes/A2A → Codex. Các mục roadmap bên dưới vẫn không phải cam kết release.
+**Sự thật phiên bản:** release `v0.4.0` đã gồm plugin durable `codex_a2a`, recovery timeout hai chiều, tiếp tục `INPUT_REQUIRED` và extension model/reasoning cho chiều Hermes/A2A → Codex. Các mục roadmap bên dưới vẫn không phải cam kết release.
 
 - **Có thể triển khai tiếp ở gateway:** preflight, template `systemd`/`launchd`, one-command two-way verify và reconciliation tùy chọn.
 - **Cần Hermes thay đổi:** async task lifecycle/recovery đối xứng ở tool native của Hermes.
 - **Experimental/later:** chuẩn hóa model/reasoning liên peer và push notification.
 
-## Có trong release v0.3.0
+## Có trong release v0.4.0
 
 - Gateway foreground với MCP stdio (Codex → Hermes) và A2A HTTP/SSE (A2A → Codex).
 - `doctor`, Agent Card, `/health`, lifecycle A2A (`GetTask`, `ListTasks`, `CancelTask`), SQLite state và recovery bảo thủ ở chiều Codex → Hermes.
@@ -29,7 +29,7 @@
 | Hạng mục đề xuất | Lý do |
 |---|---|
 | Hermes native async task tool đầy đủ | `a2a_call` native hiện là call HTTP đồng bộ. Để đối xứng lifecycle cần `returnImmediately`, giữ handle, poll, tiếp tục và cancel cùng task; gateway không tự thay đổi native tool đó. |
-| Recovery native sau timeout | Khi native client timeout trước task ID, nó không có handle để refresh request cũ. Plugin `codex_a2a` v0.3.0 giảm vấn đề này cho đường riêng của nó, nhưng không sửa native behavior/upstream. |
+| Recovery native sau timeout | Khi native client timeout trước task ID, nó không có handle để refresh request cũ. Plugin `codex_a2a` v0.4.0 giảm vấn đề này cho đường riêng của nó, nhưng không sửa native behavior/upstream. |
 | Model/reasoning với peer khác | Peer phải cùng hỗ trợ URI/envelope extension; A2A core không chuẩn hóa field này. Receiver luôn có quyền policy/capability cuối cùng. |
 
 ## Later / experimental
