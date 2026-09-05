@@ -48,7 +48,7 @@ async def test_mcp_stdio_initialize_list_and_all_tools(fake_a2a: FakeA2AServer, 
             {"message": "long operation stdio", "conversation_key": "stdio-conv", "mode": "async"},
         )
         task = chat.structured_content
-        assert task["state"] == "working"
+        assert task["state"] in {"queued", "submitted", "working"}
         got = await session.call_tool("hermes_task_get", {"task_id": task["bridge_task_id"], "refresh": False})
         assert got.structured_content["bridge_task_id"] == task["bridge_task_id"]
         listed = await session.call_tool("hermes_tasks_list", {"conversation_key": "stdio-conv"})

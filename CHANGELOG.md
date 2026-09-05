@@ -1,5 +1,15 @@
 # Changelog
 
+
+## Unreleased
+
+- Persist outbound handles before discovery and require exact message identity for recovery; remove context/time-only task guessing and scan ListTasks pagination conservatively.
+- Keep interrupted execution unknown, preserve late results, validate task/context/turn identity, and support read-only recovery of an acknowledged App Server turn.
+- Return inbound queued handles without waiting for another turn in the context; prevent execution beyond an unresolved prior turn.
+- Preserve input-required job handles, outbound attempt idempotency, origins and stable result consumption receipts (additive schema 5).
+- Harden the bundled Hermes plugin with duplicate suppression, exact retrieval, explicit proven-unsent resume, pagination and non-evicting handle capacity.
+- Separate wait expiry from execution failure; document one-host Codex Remote deployment, unverified worker tools, anti-bounce marker and pull-delivery limitations.
+
 ## 0.3.0 — 2026-09-01
 
 - Add the bundled Hermes `codex_a2a` client plugin: durable handle-only state, loopback enforcement, asynchronous submit/poll/cancel, exact message-id recovery, `INPUT_REQUIRED` continuation, and no blind resend after an ambiguous result.

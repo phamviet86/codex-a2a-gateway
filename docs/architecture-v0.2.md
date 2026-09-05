@@ -23,7 +23,7 @@ Transport chỉ parse/format A2A. `InboundService` sở hữu lifecycle, lock v�
 - Admission, turn increment, task/message/event mutation được serialize và commit transactionally. Worker chỉ được schedule sau commit; idempotent replay sửa được khoảng trống post-commit/pre-schedule.
 - Prompt gốc không persist. Fingerprint, route, state, kết quả, lỗi tối thiểu và lifecycle event được persist.
 
-Sau restart, task đã vào backend được kết thúc trung thực bằng `gateway_restarted`; context/thread mapping vẫn giữ. Task còn `queued` được đánh dấu `gateway_restarted_before_start`, rồi chỉ requeue khi client replay đúng original `messageId`, vì prompt không được persist.
+Sau restart, task đã vào backend giữ `outcome_unknown` với mã `gateway_restarted`; context/thread/turn mapping vẫn giữ để đọc kết quả chính xác nếu có. Task còn `queued` được đánh dấu `gateway_restarted_before_start`, rồi chỉ requeue khi client replay đúng original `messageId`, vì prompt không được persist.
 
 ## App Server protocol
 
@@ -41,7 +41,7 @@ Server-initiated approval/request-user-input không bị auto-approve. Gateway t
 
 Mỗi `contextId` có một asyncio lock trong daemon, nên hai lượt cùng context không khởi tạo đồng thời. Global admission cap giới hạn tổng queued + running trước khi tạo context/task; semaphore nhỏ hơn giới hạn số backend thực sự chạy. Mỗi stream subscriber có bounded queue riêng. Các context khác có thể chạy song song. Daemon độc lập với MCP stdio; process manager bên ngoài chịu trách nhiệm restart daemon.
 
-SQLite WAL, schema version 3 và additive columns cho phép restart/recovery. In-flight subprocess không thể sống qua process restart; gateway không giả vờ resume đúng turn đó, chỉ giữ thread để lượt mới tiếp tục.
+SQLite WAL, schema version 5 và additive columns cho phép restart/recovery. Không giả định subprocess còn sống sau restart. Recovery chỉ đọc turn đã ACK; không tự tạo lượt thực thi thay thế. Xem [hợp đồng mới](durable-jobs.vi.md) về peer support và giới hạn delivery.
 
 ## Capability boundary
 

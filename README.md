@@ -1,5 +1,11 @@
 # Codex A2A Gateway
 
+> **Unreleased reliability changes:** see [durable jobs and delivery](docs/durable-jobs.md).
+> Async outbound handles now precede discovery; recovery requires exact request identity.
+> Wait expiry is not failure. Results support origin handles and consumption receipts;
+> automatic delivery into an originating Desktop/Hermes conversation is not implemented.
+
+
 [![CI](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)

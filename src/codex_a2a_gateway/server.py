@@ -15,9 +15,12 @@ INSTRUCTIONS = (
     "Use hermes_chat to delegate analysis or work to the Hermes default agent. "
     "Reuse conversation_key (or returned context_id) for follow-up turns. For long tasks, "
     "use mode='async', then hermes_task_wait/get; answer input_required by calling hermes_chat "
-    "again in the same conversation. Cancellation is best-effort and never proves computation stopped. "
+    "again with task_id and the same context. Independent jobs need separate contexts. "
+    "Cancellation is best-effort and never proves computation stopped. "
     "Do not repeatedly resend a mutating request after an ambiguous timeout; provide idempotency_key. "
-    "This server exposes conversation/task operations only, not Hermes administration."
+    "Supply origin conversation_id/question_id handles for attribution; results are retrieved by get/wait, "
+    "not automatically injected into a Desktop conversation. Delegate only when useful; do simple work locally. "
+    "Never delegate a worker job back to its parent. This server is not Hermes administration."
 )
 
 mcp = MCPServer(
@@ -92,6 +95,8 @@ async def hermes_chat(
         Literal["auto", "sync", "async"], Field(description="auto waits briefly, sync waits, async returns early")
     ] = "auto",
     timeout: Annotated[float | None, Field(description="Absolute task/stream timeout in seconds", ge=1, le=300)] = None,
+    origin: dict[str, str] | None = None,
+    task_id: str | None = None,
     idempotency_key: Annotated[
         str | None, Field(description="Client key used to deduplicate exactly matching submissions", max_length=256)
     ] = None,
@@ -105,21 +110,29 @@ async def hermes_chat(
             mode=mode,
             timeout=timeout,
             idempotency_key=idempotency_key,
+            origin=origin,
+            task_id=task_id,
         )
     )
 
 
 @mcp.tool(
     name="hermes_task_get",
-    description="Get one bridge task, its Hermes status/result/input request, and recent lifecycle events.",
-    annotations=READ_ONLY,
+    description="Get a task/result; optionally acknowledge a consumed result_id with expected_origin verification.",
+    annotations=MUTATING,
     structured_output=True,
 )
 async def hermes_task_get(
     task_id: Annotated[str, Field(description="bridge_task_id or known A2A task id", min_length=1)],
     refresh: Annotated[bool, Field(description="Refresh a nonterminal task from Hermes when possible")] = True,
+    acknowledge_result_id: str | None = None,
+    expected_origin: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    return await _safe(get_service().task_get(task_id, refresh=refresh))
+    return await _safe(
+        get_service().task_get(
+            task_id, refresh=refresh, acknowledge_result_id=acknowledge_result_id, expected_origin=expected_origin
+        )
+    )
 
 
 @mcp.tool(

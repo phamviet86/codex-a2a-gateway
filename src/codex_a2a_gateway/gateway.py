@@ -177,7 +177,8 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                 {
                     "id": "codex-conversation",
                     "name": "Codex conversation",
-                    "description": "Send a text task to Codex and continue it with the returned contextId.",
+                    "description": "Delegate work to execution-host Codex; retrieve by task ID. "
+                    "Desktop plugins are not inherited. Continue input-required work with taskId.",
                     "tags": ["coding", "analysis", "conversation"],
                     "inputModes": ["text/plain"],
                     "outputModes": ["text/plain"],
@@ -331,12 +332,19 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                     request.headers.get("a2a-extensions", ""),
                 )
                 subscriber = inbound.create_subscription() if method == "SendStreamingMessage" else None
+                request_metadata = params["message"].get("metadata") or {}
+                if not isinstance(request_metadata, dict):
+                    raise BridgeError("invalid_origin", "message metadata must be an object")
+                origin = request_metadata.get("origin") or {}
+                if not isinstance(origin, dict):
+                    raise BridgeError("invalid_origin", "metadata.origin must be an object")
                 task, _deduplicated = await inbound.submit(
                     text,
                     context_id=context_id,
                     message_id=message_id,
                     task_id=task_id,
                     execution_preferences=execution_preferences,
+                    origin=origin,
                     subscriber=subscriber,
                 )
                 if method == "SendStreamingMessage":
@@ -364,7 +372,7 @@ def create_gateway_app(settings: Settings, *, service: InboundService | None = N
                 return JSONResponse(
                     _rpc_result(
                         request_id,
-                        inbound.task_payload(inbound.get_task(task_id), history_length=history_length),
+                        inbound.task_payload(await inbound.refresh_task(task_id), history_length=history_length),
                     )
                 )
             if method == "CancelTask":

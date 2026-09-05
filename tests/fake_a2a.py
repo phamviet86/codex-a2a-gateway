@@ -32,7 +32,7 @@ class FakeA2AServer:
 
     def _make_task(self, message: dict[str, Any], *, working: bool = False) -> dict[str, Any]:
         context = message.get("contextId") or f"ctx-{uuid.uuid4().hex}"
-        task_id = f"task-{uuid.uuid4().hex}"
+        task_id = message.get("taskId") or f"task-{uuid.uuid4().hex}"
         self.turns[context] = self.turns.get(context, 0) + 1
         text = "\n".join(str(p.get("text", "")) for p in message.get("parts") or [])
         state = "TASK_STATE_WORKING" if working else "TASK_STATE_COMPLETED"
@@ -43,6 +43,7 @@ class FakeA2AServer:
         task = {
             "id": task_id,
             "contextId": context,
+            "metadata": {"requestMessageId": message.get("messageId")},
             "status": {"state": state},
             "artifacts": [{"artifactId": "a1", "parts": [{"text": answer}]}],
         }

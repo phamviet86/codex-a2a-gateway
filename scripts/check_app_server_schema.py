@@ -50,6 +50,7 @@ def main() -> int:
         require_fields(root, "v1/InitializeParams.json", {"clientInfo"})
         require_fields(root, "v2/ThreadStartParams.json", {"cwd", "approvalPolicy"})
         require_fields(root, "v2/ThreadResumeParams.json", {"threadId"})
+        require_fields(root, "v2/ThreadReadParams.json", {"threadId", "includeTurns"})
         require_fields(root, "v2/TurnStartParams.json", {"threadId", "input", "clientUserMessageId"})
         require_fields(root, "v2/TurnStartParams.json", {"model", "effort"})
         require_fields(root, "v2/ModelListResponse.json", {"data", "nextCursor"})

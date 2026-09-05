@@ -46,11 +46,12 @@ async def test_a2a_and_all_service_tool_operations(fake_a2a: FakeA2AServer, tmp_
 
         question = await service.chat("need input", conversation_key="conv", mode="sync")
         assert question["state"] == "input_required" and question["needs_input"] is True
-        continuation = await service.chat("use 42", conversation_key="conv", mode="sync")
+        continuation = await service.chat("use 42", task_id=question["bridge_task_id"], mode="sync")
         assert continuation["context_id"] == first["context_id"] and "turn=4" in continuation["result"]
 
         long_task = await service.chat("long operation", conversation_key="cancel-conv", mode="async")
-        assert long_task["state"] == "working"
+        assert long_task["state"] in {"queued", "submitted", "working"}
+        await service._changed[long_task["bridge_task_id"]].wait()
         canceled = await service.task_cancel(long_task["bridge_task_id"])
         assert canceled["cancel_requested"] and canceled["state"] == "canceled"
         assert canceled["computation_stopped"] == "unknown"
@@ -60,7 +61,7 @@ async def test_a2a_and_all_service_tool_operations(fake_a2a: FakeA2AServer, tmp_
         assert closed["context"]["status"] == "closed" and "not deleted" in closed["note"]
 
         remote_list = await service.client.list_tasks(limit=10)
-        assert len(remote_list["tasks"]) >= 5
+        assert len(remote_list["tasks"]) >= 4
     finally:
         await service.aclose()
 

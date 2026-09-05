@@ -1,5 +1,11 @@
 # Codex A2A Gateway
 
+> **Bản sửa chưa phát hành:** xem [job bền vững và trả kết quả](docs/durable-jobs.vi.md).
+> Handle outbound async được lưu trước discovery; recovery phải khớp request chính xác.
+> Hết lượt chờ không phải thất bại. Có nguồn job và receipt xác nhận nhận kết quả;
+> chưa tự chèn kết quả vào cuộc trò chuyện Desktop/Hermes gốc.
+
+
 [English](README.md) | **Tiếng Việt**
 
 **Public beta · v0.3.0**
@@ -116,7 +122,7 @@ hermes config set plugins.entries.codex-a2a-gateway.settings.endpoint http://127
 hermes config set plugins.entries.codex-a2a-gateway.settings.timeout 30
 ```
 
-Plugin có `codex_a2a_call`, `codex_a2a_get`, `codex_a2a_wait`, `codex_a2a_list`, `codex_a2a_cancel`; nó chỉ lưu metadata handle, không lưu result/artifact Codex, luôn dùng `returnImmediately: true` và timeout thành `outcome_unknown`. Recovery cần `requestMessageId` đã lưu khớp chính xác và đúng một candidate chưa gắn handle từ `ListTasks(contextId)`; nếu không task vẫn unknown. Endpoint bị giới hạn loopback.
+Plugin có `codex_a2a_call`, `codex_a2a_get`, `codex_a2a_wait`, `codex_a2a_list`, `codex_a2a_cancel`; nó chỉ lưu metadata handle, không lưu result/artifact Codex, luôn dùng `returnImmediately: true` và lỗi vận chuyển mơ hồ thành `outcome_unknown`; hết lượt wait giữ trạng thái đã biết. Recovery cần `requestMessageId` đã lưu khớp chính xác và đúng một candidate chưa gắn handle từ `ListTasks(contextId)`; nếu không task vẫn unknown. Endpoint bị giới hạn loopback.
 
 Plugin đọc `plugins.entries.codex-a2a-gateway.settings.endpoint` và `.timeout`, không đọc native peer map `a2a_agents`; cần đặt endpoint này khi dùng một port loopback khác `9910`.
 

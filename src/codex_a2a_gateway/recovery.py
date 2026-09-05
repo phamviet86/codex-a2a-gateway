@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from .models import A2ATaskResult, TaskRecord, TaskState
+from .models import A2A_STATE_MAP, TURN_END_STATES, A2ATaskResult, TaskRecord
 
 
 class ConversationRecovery:
@@ -29,9 +29,8 @@ class ConversationRecovery:
         assigned_task_ids: set[str],
         unresolved_count: int,
     ) -> A2ATaskResult | None:
-        """Return one unambiguous late agent record; never infer among peers."""
-        if unresolved_count != 1:
-            return None
+        """Require a persisted exact user message ID; legacy context/time-only records are insufficient."""
+        del unresolved_count
         path = self.directory / f"{self._safe_name(task.context_id)}.jsonl"
         try:
             if not path.is_file() or path.stat().st_size > self.max_bytes:
@@ -49,11 +48,11 @@ class ConversationRecovery:
             return None
 
         created = self._created_epoch(task)
-        candidates: dict[str, str] = {}
+        candidates: dict[str, tuple[str, str]] = {}
         user_ids: set[str] = set()
         for record in records:
             task_id = str(record.get("task_id") or "")
-            if not task_id or task_id in assigned_task_ids:
+            if not task_id or task_id in assigned_task_ids or (task.a2a_task_id and task_id != task.a2a_task_id):
                 continue
             raw_timestamp = record.get("ts")
             try:
@@ -63,18 +62,24 @@ class ConversationRecovery:
             if timestamp < created - 5:
                 continue
             role = str(record.get("role") or "")
-            if role == "user":
+            if role == "user" and (
+                record.get("message_id") == task.message_id or record.get("messageId") == task.message_id
+            ):
                 user_ids.add(task_id)
             elif role == "agent" and isinstance(record.get("text"), str):
-                candidates[task_id] = str(record["text"])
+                raw_state = str(record.get("task_state") or "")
+                state = A2A_STATE_MAP.get(raw_state, raw_state)
+                if state in TURN_END_STATES:
+                    candidates[task_id] = (str(record["text"]), state)
 
         matched = [(task_id, text) for task_id, text in candidates.items() if task_id in user_ids]
         if len(matched) != 1:
             return None
-        task_id, text = matched[0]
+        task_id, (text, state) = matched[0]
         return A2ATaskResult(
             task_id=task_id,
             context_id=task.context_id,
-            state=TaskState.COMPLETED.value,
+            state=state,
             text=text,
+            raw={"metadata": {"requestMessageId": task.message_id}},
         )
