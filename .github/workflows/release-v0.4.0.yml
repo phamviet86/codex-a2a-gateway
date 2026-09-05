@@ -1,0 +1,53 @@
+name: Publish v0.4.0
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-v0.4.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      contains(github.event.workflow_run.head_commit.message, '[release v0.4.0]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Verify version and build tested commit
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          python -c 'import tomllib; assert tomllib.load(open("pyproject.toml", "rb"))["project"]["version"] == "0.4.0"'
+          python -m pip install -e '.[dev]'
+          python -m build
+          python -m twine check dist/*
+          python scripts/check_dist.py dist
+          python scripts/check_wheel_install.py dist/*.whl
+          python scripts/write_sha256sums.py dist
+          python scripts/write_sha256sums.py --check dist
+      - name: Tag, upload, download-verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/publish_v040.py
