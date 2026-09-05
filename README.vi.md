@@ -1,6 +1,6 @@
 # Codex A2A Gateway
 
-> **Bản sửa chưa phát hành:** xem [job bền vững và trả kết quả](docs/durable-jobs.vi.md).
+> **Hợp đồng reliability v0.4.0:** xem [job bền vững và trả kết quả](docs/durable-jobs.vi.md).
 > Handle outbound async được lưu trước discovery; recovery phải khớp request chính xác.
 > Hết lượt chờ không phải thất bại. Có nguồn job và receipt xác nhận nhận kết quả;
 > chưa tự chèn kết quả vào cuộc trò chuyện Desktop/Hermes gốc.
@@ -8,20 +8,20 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Public beta · v0.3.0**
+**Public beta · v0.4.0**
 
 `codex-a2a-gateway` giúp Codex giao tiếp hai chiều theo chuẩn A2A v1.0:
 
 - **Codex → Hermes/A2A:** Codex gọi bảy MCP tool qua stdio để giao việc cho Hermes Agent local.
 - **Hermes/A2A → Codex:** Hermes hoặc A2A client gọi HTTP/SSE gateway; gateway chuyển task vào Codex App Server.
 
-Với task Hermes → Codex chạy lâu, `a2a_call` built-in vẫn là một lượt đồng bộ. Plugin `codex_a2a` đi kèm `v0.3.0` bổ sung submit sớm, handle bền, poll/cancel, tiếp tục `INPUT_REQUIRED` và không blind resend sau timeout.
+Với task Hermes → Codex chạy lâu, `a2a_call` built-in vẫn là một lượt đồng bộ. Plugin `codex_a2a` đi kèm `v0.4.0` bổ sung submit sớm, handle bền, poll/cancel, tiếp tục `INPUT_REQUIRED` và không blind resend sau timeout.
 
 Hermes là peer đầu tiên đã được kiểm thử, không phải giới hạn của sản phẩm. Inbound gateway dùng các operation A2A v1.0 phổ biến nên các A2A client tương thích khác cũng có thể kết nối.
 
 > Đây là dự án cộng đồng độc lập, không phải sản phẩm chính thức hay được bảo trợ bởi OpenAI/Codex hoặc Nous Research/Hermes Agent.
 
-> **Phạm vi phiên bản:** wheel `v0.3.0` đã phát hành có plugin durable Hermes, recovery timeout hai chiều, tiếp tục `INPUT_REQUIRED` và extension model/reasoning tùy chọn cho chiều Hermes/A2A → Codex.
+> **Phạm vi phiên bản:** wheel `v0.4.0` đã phát hành có plugin durable Hermes, recovery timeout hai chiều, tiếp tục `INPUT_REQUIRED` và extension model/reasoning tùy chọn cho chiều Hermes/A2A → Codex.
 
 ## Cài đặt
 
@@ -32,7 +32,7 @@ Trên máy vận hành, cài trực tiếp release wheel vào virtualenv riêng,
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 
@@ -109,7 +109,7 @@ hermes tools enable a2a --platform cli
 
 ### Plugin reliable Hermes
 
-Wheel `v0.3.0` đã phát hành có plugin này; bật plugin và toolset riêng cho CLI:
+Wheel `v0.4.0` đã phát hành có plugin này; bật plugin và toolset riêng cho CLI:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"

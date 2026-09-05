@@ -2,7 +2,7 @@
 
 > Hợp đồng recovery/delivery mới: [job bền vững](durable-jobs.vi.md). Hết lượt wait không phải thất bại; không tự đưa kết quả vào Desktop conversation.
 
-Hướng dẫn này dành cho một người dùng cài `codex-a2a-gateway` `v0.3.0` trên **một máy local** rồi kiểm tra cả hai chiều. Release đã gồm plugin durable, recovery timeout, tiếp tục `INPUT_REQUIRED` và extension model/reasoning tùy chọn. Mỗi chiều có một vai trò riêng:
+Hướng dẫn này dành cho một người dùng cài `codex-a2a-gateway` `v0.4.0` trên **một máy local** rồi kiểm tra cả hai chiều. Release đã gồm plugin durable, recovery timeout, tiếp tục `INPUT_REQUIRED` và extension model/reasoning tùy chọn. Mỗi chiều có một vai trò riêng:
 
 ```text
 Codex task --MCP stdio--> gateway serve --> Hermes A2A, 127.0.0.1:9900
@@ -36,9 +36,9 @@ Chỉ cài sau khi SHA-256 của **cả wheel và source archive** khớp `SHA25
 
 ```bash
 release_dir="$(mktemp -d)"
-release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0"
-wheel="codex_a2a_gateway-0.3.0-py3-none-any.whl"
-sdist="codex_a2a_gateway-0.3.0.tar.gz"
+release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0"
+wheel="codex_a2a_gateway-0.4.0-py3-none-any.whl"
+sdist="codex_a2a_gateway-0.4.0.tar.gz"
 
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
 curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
@@ -134,7 +134,7 @@ hermes tools enable a2a --platform cli
 
 ### Plugin durable
 
-`a2a_call` built-in của Hermes là call đồng bộ. Wheel `v0.3.0` đã có plugin self-contained; cài plugin và chỉ bật toolset riêng `codex_a2a` cho CLI:
+`a2a_call` built-in của Hermes là call đồng bộ. Wheel `v0.4.0` đã có plugin self-contained; cài plugin và chỉ bật toolset riêng `codex_a2a` cho CLI:
 
 ```bash
 gateway_bin="$gateway_venv/bin/codex-a2a-gateway"

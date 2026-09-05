@@ -1,7 +1,8 @@
-# Durable jobs and return delivery (unreleased)
+# Durable jobs and return delivery (v0.4.0)
 
-This contract supersedes the v0.3.0 recovery descriptions for a checkout containing
-these changes. It has local fake-peer coverage; it is not a live deployment claim.
+This v0.4.0 contract supersedes the v0.3.0 recovery descriptions. Fake-peer and
+isolated live VPS evidence are recorded in [release validation](testing-report-v0.4.0.md).
+That evidence does not claim a production deployment.
 
 ## Deployment and roles
 
@@ -77,7 +78,8 @@ wait can read App Server `thread/read(includeTurns=true)` using the **saved thre
 and acknowledged turn ID**, accepting only that exact terminal turn with full items.
 Recovery does not call `thread/resume` or `turn/start`. Missing turn ID, unavailable
 history, partial history, CLI history or an in-progress turn remain unknown. This
-is schema-checked and fake-tested, not live verified. The pre-turn-ACK gap is not
+is schema-checked and fake-tested; isolated live restart recovered a canceled
+acknowledged turn without rerunning it. The pre-turn-ACK gap is not
 claimed solved by the existence of `clientUserMessageId` in a schema.
 
 An inbound job proven queued before backend entry can be restarted only by an

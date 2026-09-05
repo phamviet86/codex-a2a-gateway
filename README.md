@@ -1,6 +1,6 @@
 # Codex A2A Gateway
 
-> **Unreleased reliability changes:** see [durable jobs and delivery](docs/durable-jobs.md).
+> **v0.4.0 reliability contract:** see [durable jobs and delivery](docs/durable-jobs.md).
 > Async outbound handles now precede discovery; recovery requires exact request identity.
 > Wait expiry is not failure. Results support origin handles and consumption receipts;
 > automatic delivery into an originating Desktop/Hermes conversation is not implemented.
@@ -11,7 +11,7 @@
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
-**Public beta · v0.3.0**
+**Public beta · v0.4.0**
 
 English | [Tiếng Việt](README.vi.md)
 
@@ -24,7 +24,7 @@ Hermes Agent is the first verified peer, not the product boundary. The inbound e
 
 > **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
 
-> **Version scope:** the published `v0.3.0` wheel includes the durable Hermes client, two-way timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
+> **Version scope:** the published `v0.4.0` wheel includes the durable Hermes client, two-way timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
 
 ## Architecture
 
@@ -78,7 +78,7 @@ For an operator machine, install the release wheel into a dedicated virtual envi
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 ```
 
@@ -169,7 +169,7 @@ hermes tools enable a2a --platform cli
 
 ### Durable Hermes client
 
-The published `v0.3.0` wheel ships this plugin. Enable only its dedicated CLI toolset:
+The published `v0.4.0` wheel ships this plugin. Enable only its dedicated CLI toolset:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -268,7 +268,7 @@ Report vulnerabilities through GitHub private vulnerability reporting as describ
 
 Default tests use an ephemeral fake A2A server and do not require Hermes or a live model. `doctor` is read-only; `smoke` sends a real Hermes task and must be run intentionally with harmless content.
 
-Current release evidence is in [testing report v0.2](docs/testing-report-v0.2.md). Coding agents must also follow [AGENTS.md](AGENTS.md).
+Current release evidence is in [v0.4.0 release validation](docs/testing-report-v0.4.0.md). Coding agents must also follow [AGENTS.md](AGENTS.md).
 
 ## Migration from the old name
 

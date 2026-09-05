@@ -1,7 +1,7 @@
 # Changelog
 
 
-## Unreleased
+## 0.4.0 — 2026-09-05
 
 - Persist outbound handles before discovery and require exact message identity for recovery; remove context/time-only task guessing and scan ListTasks pagination conservatively.
 - Keep interrupted execution unknown, preserve late results, validate task/context/turn identity, and support read-only recovery of an acknowledged App Server turn.
