@@ -1,5 +1,7 @@
 # Thiết lập Codex + Hermes hai chiều (macOS/Linux)
 
+> Hợp đồng recovery/delivery mới: [job bền vững](durable-jobs.vi.md). Hết lượt wait không phải thất bại; không tự đưa kết quả vào Desktop conversation.
+
 Hướng dẫn này dành cho một người dùng cài `codex-a2a-gateway` `v0.3.0` trên **một máy local** rồi kiểm tra cả hai chiều. Release đã gồm plugin durable, recovery timeout, tiếp tục `INPUT_REQUIRED` và extension model/reasoning tùy chọn. Mỗi chiều có một vai trò riêng:
 
 ```text

@@ -261,6 +261,8 @@ class A2AClient:
         except TimeoutError as exc:
             raise A2AError("a2a_timeout", "A2A stream exceeded its absolute timeout", retryable=False) from exc
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code >= 500 and method == "SendStreamingMessage":
+                raise A2AError("a2a_transport_ambiguous", "server error after sending request") from exc
             raise self._http_error(exc) from exc
         except httpx.TransportError as exc:
             raise A2AError("a2a_transport_ambiguous", f"A2A stream failed: {type(exc).__name__}") from exc
@@ -274,10 +276,17 @@ class A2AClient:
         message_id: str,
         *,
         timeout: float,
+        task_id: str | None = None,
+        origin: dict[str, str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
+        wire_message = self._message(message, context_id, message_id)
+        if task_id:
+            wire_message["taskId"] = task_id
+        if origin:
+            wire_message["metadata"] = {"origin": origin}
         async for event in self._sse(
             "SendStreamingMessage",
-            {"message": self._message(message, context_id, message_id)},
+            {"message": wire_message},
             timeout=timeout,
         ):
             yield event
@@ -291,6 +300,7 @@ class A2AClient:
         *,
         context_id: str = "",
         state: str = "",
+        page_token: str = "",
         limit: int = 50,
         timeout: float = 10.0,
     ) -> dict[str, Any]:
@@ -298,6 +308,8 @@ class A2AClient:
             "pageSize": max(1, min(limit, 100)),
             "includeArtifacts": True,
         }
+        if page_token:
+            params["pageToken"] = page_token
         if context_id:
             params["contextId"] = context_id
         if state:

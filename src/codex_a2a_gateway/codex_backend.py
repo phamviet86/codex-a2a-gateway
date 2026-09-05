@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -271,7 +272,10 @@ class AppServerBackend(_SubprocessBackend):
             return "Codex requires additional permissions; adjust the gateway policy before retrying."
         if method == "item/tool/requestUserInput":
             await self._write(process, {"id": request_id, "result": {"answers": {}}})
-            return "Codex requires additional user input; send the answer as the next message in this context."
+            questions = (message.get("params") or {}).get("questions") or []
+            return "Codex requires input. Continue this A2A task with the answer. Questions: " + json.dumps(
+                questions, ensure_ascii=False
+            )
         await self._write(
             process,
             {"id": request_id, "error": {"code": -32601, "message": "Gateway cannot satisfy this client request"}},
@@ -317,6 +321,7 @@ class AppServerBackend(_SubprocessBackend):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             cwd=self.workspace,
+            env={**os.environ, "CODEX_A2A_GATEWAY_WORKER_TASK_ID": task_id},
         )
         self._processes[task_id] = process
         execution_preferences = execution_preferences or {}
@@ -365,6 +370,13 @@ class AppServerBackend(_SubprocessBackend):
                 thread_params: dict[str, Any] = {
                     "approvalPolicy": self.approval_policy,
                     "cwd": str(self.workspace),
+                    "developerInstructions": (
+                        "You are an execution-host worker for a Hermes A2A request. Use available local tools "
+                        "within their permissions. Desktop tools/plugins are not inherited. Report unavailable "
+                        "capabilities and incomplete actions explicitly. Return results and artifact paths to this "
+                        "request. Do not delegate this job back to Hermes. Do not repeat completed mutations when "
+                        "continuing with new input; inspect prior thread context first."
+                    ),
                 }
                 if thread_id:
                     thread_params["threadId"] = thread_id
@@ -378,6 +390,8 @@ class AppServerBackend(_SubprocessBackend):
                 actual_thread_id = str(thread.get("id") or thread_id or "") if isinstance(thread, dict) else ""
                 if not actual_thread_id:
                     raise BridgeError("app_server_protocol", "Codex App Server did not return a thread id")
+                if thread_id and actual_thread_id != thread_id:
+                    raise BridgeError("app_server_protocol", "resume returned a different thread")
                 await on_started(actual_thread_id, None)
 
                 turn_params: dict[str, Any] = {
@@ -415,6 +429,16 @@ class AppServerBackend(_SubprocessBackend):
                 final_text = ""
                 while True:
                     message = await self._read(process)
+                    params = message.get("params") or {}
+                    if isinstance(params, dict) and (
+                        (params.get("threadId") and params["threadId"] != actual_thread_id)
+                        or (params.get("turnId") and params["turnId"] != turn_id)
+                        or (
+                            message.get("method") == "turn/completed"
+                            and (params.get("turn") or {}).get("id") not in {None, turn_id}
+                        )
+                    ):
+                        raise BridgeError("app_server_protocol", "notification belongs to another thread/turn")
                     interaction = await self._server_request(process, message)
                     if interaction:
                         return BackendResult(
@@ -459,6 +483,63 @@ class AppServerBackend(_SubprocessBackend):
         finally:
             await self._stop(task_id)
             self._processes.pop(task_id, None)
+
+    async def recover(self, thread_id: str, turn_id: str) -> BackendResult | None:
+        """Read persisted history for an ACKNOWLEDGED turn; never start/resume a turn."""
+        process = await asyncio.create_subprocess_exec(
+            self.codex_bin,
+            "app-server",
+            "--listen",
+            "stdio://",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            cwd=self.workspace,
+        )
+        try:
+            async with asyncio.timeout(10):
+                await self._write(
+                    process,
+                    {
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"clientInfo": {"name": "codex-a2a-recovery", "version": __version__}},
+                    },
+                )
+                await self._response(process, 1)
+                await self._write(process, {"method": "initialized", "params": {}})
+                await self._write(
+                    process, {"id": 2, "method": "thread/read", "params": {"threadId": thread_id, "includeTurns": True}}
+                )
+                payload, _ = await self._response(process, 2)
+                thread = payload.get("thread") or {}
+                if thread.get("id") != thread_id:
+                    return None
+                turns = [turn for turn in thread.get("turns") or [] if turn.get("id") == turn_id]
+                if len(turns) != 1:
+                    return None
+                turn = turns[0]
+                if turn.get("itemsView", "full") != "full":
+                    return None
+                state = {"completed": "completed", "failed": "failed", "interrupted": "canceled"}.get(
+                    turn.get("status")
+                )
+                if not state:
+                    return None
+                text = "\n".join(
+                    item["text"]
+                    for item in turn.get("items") or []
+                    if item.get("type") == "agentMessage" and isinstance(item.get("text"), str)
+                )
+                return BackendResult(state, text, thread_id, turn_id)
+        finally:
+            if process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=2)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
 
     async def cancel(self, task_id: str, thread_id: str | None, turn_id: str | None) -> bool:
         process = self._processes.get(task_id)
@@ -515,6 +596,7 @@ class CLIBackend(_SubprocessBackend):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             cwd=self.workspace,
+            env={**os.environ, "CODEX_A2A_GATEWAY_WORKER_TASK_ID": task_id},
         )
         self._processes[task_id] = process
         if process.stdin is None or process.stdout is None:

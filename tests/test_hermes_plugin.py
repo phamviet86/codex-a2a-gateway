@@ -205,7 +205,7 @@ def test_plugin_persists_definite_json_rpc_rejection(monkeypatch) -> None:
     assert ctx.state.get("handles")[0]["failure_code"] == "gateway_rejected"
 
 
-def test_plugin_wait_timeout_marks_unknown_without_resend(monkeypatch) -> None:
+def test_plugin_wait_timeout_preserves_working_without_resend(monkeypatch) -> None:
     ctx = FakeContext()
     ctx.state.set(
         "handles",
@@ -233,9 +233,10 @@ def test_plugin_wait_timeout_marks_unknown_without_resend(monkeypatch) -> None:
     monkeypatch.setattr(tools.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(tools.time, "sleep", lambda _seconds: None)
     result = json.loads(tools._wait(ctx, {"task_id": "local-2", "timeout": 1}))
-    assert result["state"] == "outcome_unknown"
+    assert result["state"] == "TASK_STATE_WORKING"
+    assert result["timed_out"] is True
     assert methods == ["GetTask"]
-    assert ctx.state.get("handles")[0]["state"] == "outcome_unknown"
+    assert ctx.state.get("handles")[0]["state"] == "TASK_STATE_WORKING"
 
 
 def test_plugin_transport_failures_mark_existing_handles_unknown(monkeypatch) -> None:
@@ -311,7 +312,7 @@ def test_plugin_unique_list_recovery_refuses_ambiguity(monkeypatch) -> None:
     ctx = FakeContext()
     handle = {
         "handle_id": "local-3",
-        "remote_task_id": "stale-remote-id",
+        "remote_task_id": "",
         "context_id": "context-3",
         "endpoint": "http://127.0.0.1:9910",
         "message_id": "message-3",

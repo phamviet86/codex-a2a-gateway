@@ -20,7 +20,7 @@ Hermes is the first verified outbound peer, not the product boundary. Do not tur
 - `src/codex_a2a_gateway/settings.py`: environment contract and network policy.
 - `tests/`: mirrors these boundaries with fake-server and protocol regression coverage.
 
-Treat `docs/architecture-v0.2.md`, `docs/inbound-gateway.md`, and the current README as the implemented contract. Files labelled as v0.1 or research are historical evidence, not the current specification.
+Treat `docs/durable-jobs.md`, `docs/architecture-v0.2.md`, `docs/inbound-gateway.md`, and the current README as the implemented contract. Files labelled as v0.1 or research are historical evidence, not the current specification.
 
 ## Non-negotiable invariants
 
@@ -29,7 +29,7 @@ Treat `docs/architecture-v0.2.md`, `docs/inbound-gateway.md`, and the current RE
 - Inbound non-loopback bind or public URL requires bearer authentication. Remote deployment also requires TLS at a trusted proxy.
 - Read secrets from environment variables. Never log, persist, echo, or commit tokens.
 - Do not persist the original outbound prompt. Results and artifacts can still be sensitive and require restrictive file permissions and retention.
-- Never automatically resend a mutating A2A request after an ambiguous transport outcome. Reconcile by task/context and preserve `outcome_unknown` when evidence is ambiguous.
+- Never automatically resend a mutating A2A request after an ambiguous transport outcome. Reconcile only by saved task ID or exact request message identity, never context/unique-candidate inference; preserve `outcome_unknown` when evidence is ambiguous.
 - Cancellation remains best-effort. Never claim that the underlying agent computation stopped unless an upstream protocol proves it.
 - Preserve A2A v1 task and event shapes. Do not reintroduce the legacy stream field `final`.
 - Codex App Server over stdio is the default inbound backend. CLI mode is an explicit compatibility path and may not take over a context that already owns an App Server thread.

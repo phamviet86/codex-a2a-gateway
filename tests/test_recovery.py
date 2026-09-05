@@ -68,7 +68,9 @@ async def test_sync_uses_stream_and_completes_after_initial_timeout_without_rese
 
 
 @pytest.mark.asyncio
-async def test_outcome_unknown_recovers_by_context_list_without_resend(fake_a2a: FakeA2AServer, tmp_path: Path) -> None:
+async def test_outcome_unknown_recovers_by_exact_message_without_resend(
+    fake_a2a: FakeA2AServer, tmp_path: Path
+) -> None:
     context_id = "codex-recover-list"
     service = BridgeService(
         Settings(
@@ -79,11 +81,13 @@ async def test_outcome_unknown_recovers_by_context_list_without_resend(fake_a2a:
     )
     try:
         task = _unknown_task(service, context_id)
-        remote = fake_a2a._make_task({"contextId": context_id, "parts": [{"text": "late work"}]})
+        remote = fake_a2a._make_task(
+            {"contextId": context_id, "messageId": task.message_id, "parts": [{"text": "late work"}]}
+        )
         result = await service.task_get(task.bridge_task_id)
         assert result["state"] == "completed"
         assert result["a2a_task_id"] == remote["id"]
-        assert result["recovery_strategy"] == "a2a_list"
+        assert result["recovery_strategy"] == "a2a_list_exact_message"
         assert fake_a2a.method_counts.get("SendMessage", 0) == 0
         assert fake_a2a.method_counts.get("SendStreamingMessage", 0) == 0
     finally:
@@ -91,7 +95,7 @@ async def test_outcome_unknown_recovers_by_context_list_without_resend(fake_a2a:
 
 
 @pytest.mark.asyncio
-async def test_outcome_unknown_falls_back_to_official_conversation_store(
+async def test_outcome_unknown_uses_exact_message_in_extended_conversation_store(
     fake_a2a: FakeA2AServer, tmp_path: Path
 ) -> None:
     context_id = "codex-recover-disk"
@@ -109,8 +113,20 @@ async def test_outcome_unknown_falls_back_to_official_conversation_store(
         timestamp = time.time()
         path = conversation_dir / f"{context_id}.jsonl"
         records = [
-            {"ts": timestamp, "role": "user", "text": "late work", "task_id": "task-on-disk"},
-            {"ts": timestamp + 1, "role": "agent", "text": "late result from disk", "task_id": "task-on-disk"},
+            {
+                "ts": timestamp,
+                "role": "user",
+                "text": "late work",
+                "task_id": "task-on-disk",
+                "message_id": task.message_id,
+            },
+            {
+                "ts": timestamp + 1,
+                "role": "agent",
+                "text": "late result from disk",
+                "task_id": "task-on-disk",
+                "task_state": "completed",
+            },
         ]
         path.write_text("".join(json.dumps(item) + "\n" for item in records), encoding="utf-8")
         result = await service.task_get(task.bridge_task_id)
@@ -118,7 +134,7 @@ async def test_outcome_unknown_falls_back_to_official_conversation_store(
         assert result["result"] == "late result from disk"
         assert result["a2a_task_id"] == "task-on-disk"
         assert result["recovery_strategy"] == "conversation_store"
-        assert "does not store A2A task state" in result["recovery_warning"]
+        assert "exact message ID" in result["recovery_warning"]
         assert fake_a2a.method_counts.get("SendMessage", 0) == 0
         assert fake_a2a.method_counts.get("SendStreamingMessage", 0) == 0
     finally:

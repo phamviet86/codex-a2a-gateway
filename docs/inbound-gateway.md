@@ -1,5 +1,7 @@
 # Vận hành inbound A2A gateway
 
+> Hợp đồng recovery/delivery mới: [job bền vững](durable-jobs.vi.md). Hết lượt wait không phải thất bại; không tự đưa kết quả vào Desktop conversation.
+
 ## Khởi động an toàn
 
 ```bash

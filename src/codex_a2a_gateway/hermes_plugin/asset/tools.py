@@ -7,8 +7,10 @@ in Hermes-owned ``ctx.state`` so timeout recovery never resends a request.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -28,6 +30,14 @@ TERMINAL = {
 
 class GatewayRejection(ValueError):
     """A definite JSON-RPC rejection returned by the local gateway."""
+
+    def __init__(self, message: str, code: int | None = None):
+        super().__init__(message)
+        self.code = code
+
+
+class LocalHandleError(ValueError):
+    """Caller validation failed before any peer lookup."""
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -84,7 +94,10 @@ def _request(endpoint: str, payload: dict[str, Any], timeout: float, *, extensio
     if not isinstance(value, dict):
         raise ValueError("gateway returned a non-object response")
     if "error" in value:
-        raise GatewayRejection(str((value["error"] or {}).get("message") or "gateway rejected the request"))
+        raise GatewayRejection(
+            str((value["error"] or {}).get("message") or "gateway rejected the request"),
+            (value["error"] or {}).get("code"),
+        )
     return value
 
 
@@ -115,6 +128,7 @@ def _task_from_response(response: dict[str, Any]) -> dict[str, Any]:
 
 
 MAX_HANDLES = 200
+_STATE_LOCK = threading.RLock()
 PERSISTED_HANDLE_FIELDS = {
     "handle_id",
     "remote_task_id",
@@ -124,6 +138,10 @@ PERSISTED_HANDLE_FIELDS = {
     "rpc_id",
     "request_fingerprint",
     "preferences",
+    "attempts",
+    "origin",
+    "result_id",
+    "acknowledged_result_id",
     "state",
     "failure_code",
     "attempt_number",
@@ -133,7 +151,7 @@ PERSISTED_HANDLE_FIELDS = {
 
 def _handles(ctx: Any) -> list[dict[str, Any]]:
     values = ctx.state.get("handles", [])
-    return [value for value in values if isinstance(value, dict)] if isinstance(values, list) else []
+    return [dict(value) for value in values if isinstance(value, dict)] if isinstance(values, list) else []
 
 
 def _handle_ids(ctx: Any) -> list[str]:
@@ -146,21 +164,57 @@ def _public_handle(handle: dict[str, Any]) -> dict[str, Any]:
 
 
 def _save_handle(ctx: Any, handle: dict[str, Any]) -> dict[str, Any]:
+    with _STATE_LOCK:
+        for saved in _handles(ctx):
+            if saved.get("handle_id") == handle.get("handle_id"):
+                saved_attempt = int(saved.get("attempt_number") or 1)
+                incoming_attempt = int(handle.get("attempt_number") or 1)
+                if saved_attempt > incoming_attempt:
+                    raise LocalHandleError("a newer continuation exists; refresh the handle")
+                if saved.get("message_id") != handle.get("message_id") and saved_attempt == incoming_attempt:
+                    raise LocalHandleError("a different request owns this handle")
+                if "acknowledged_result_id" not in handle and saved.get("acknowledged_result_id"):
+                    handle["acknowledged_result_id"] = saved["acknowledged_result_id"]
+        return _save_handle_locked(ctx, handle)
+
+
+def _save_handle_locked(ctx: Any, handle: dict[str, Any]) -> dict[str, Any]:
     handle_id = str(handle["handle_id"])
     handles = [entry for entry in _handles(ctx) if str(entry.get("handle_id")) != handle_id]
     # Hermes state is durable and quota-limited. Do not persist remote task
     # snapshots/results/artifacts; only the handle required for recovery.
     handles.append(_public_handle(handle))
     handles.sort(key=lambda entry: float(entry.get("updated_at") or 0), reverse=True)
-    ctx.state.set("handles", handles[:MAX_HANDLES])
+    if len(handles) > MAX_HANDLES:
+        raise ValueError("handle capacity reached; preserve existing handles and archive state before new submissions")
+    ctx.state.set("handles", handles)
     return handle
 
 
-def _record(ctx: Any, task: dict[str, Any], endpoint: str, handle: dict[str, Any]) -> dict[str, Any]:
+def _record(
+    ctx: Any, task: dict[str, Any], endpoint: str, handle: dict[str, Any], *, from_submission: bool = False
+) -> dict[str, Any]:
+    if handle.get("remote_task_id") and task["id"] != handle["remote_task_id"]:
+        raise ValueError("task id does not match the saved handle")
+    if task.get("contextId") and task["contextId"] != handle.get("context_id"):
+        raise ValueError("task context does not match the saved handle")
+    metadata = task.get("metadata") or {}
+    if (
+        not from_submission
+        and int(handle.get("attempt_number") or 1) > 1
+        and metadata.get("requestMessageId") != handle.get("message_id")
+    ):
+        raise ValueError("continuation retrieval requires its exact requestMessageId")
+    if metadata.get("requestMessageId") and metadata["requestMessageId"] != handle.get("message_id"):
+        raise ValueError("task belongs to another request or continuation")
+    handle["failure_code"] = metadata.get("errorCode")
+    handle["result_id"] = metadata.get("resultId")
     handle["remote_task_id"] = str(task["id"])
     handle["context_id"] = str(task.get("contextId") or handle.get("context_id") or "")
     handle["endpoint"] = endpoint
-    handle["state"] = str((task.get("status") or {}).get("state") or "TASK_STATE_SUBMITTED")
+    handle["state"] = str(
+        metadata.get("bridgeState") or (task.get("status") or {}).get("state") or "TASK_STATE_SUBMITTED"
+    )
     handle["updated_at"] = time.time()
     return _save_handle(ctx, handle)
 
@@ -199,11 +253,20 @@ def _get(ctx: Any, handle: dict[str, Any]) -> tuple[dict[str, Any], dict[str, An
         if recovered is None:
             return _mark_unknown(ctx, handle), None
         return recovered
-    response = _request(
-        endpoint,
-        {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": "GetTask", "params": {"id": remote_task_id}},
-        _timeout(ctx),
-    )
+    try:
+        response = _request(
+            endpoint,
+            {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": "GetTask", "params": {"id": remote_task_id}},
+            _timeout(ctx),
+        )
+    except GatewayRejection as exc:
+        if exc.code != -32001:
+            raise
+        recovered = _recover_unique(ctx, handle)
+        if recovered is not None:
+            return recovered
+        return _mark_unknown(ctx, handle), None
+
     result = response.get("result")
     if not isinstance(result, dict) or not isinstance(result.get("id"), str):
         raise ValueError("gateway returned an invalid task")
@@ -216,17 +279,26 @@ def _recover_unique(ctx: Any, handle: dict[str, Any]) -> tuple[dict[str, Any], d
     if not context_id or not message_id:
         return None
     endpoint = _loopback_endpoint(str(handle["endpoint"]))
-    response = _request(
-        endpoint,
-        {
-            "jsonrpc": "2.0",
-            "id": uuid.uuid4().hex,
-            "method": "ListTasks",
-            "params": {"contextId": context_id, "pageSize": 100},
-        },
-        _timeout(ctx),
-    )
-    tasks = (response.get("result") or {}).get("tasks", []) if isinstance(response.get("result"), dict) else []
+    tasks: list[Any] = []
+    page_token = ""
+    seen: set[str] = set()
+    for _ in range(100):
+        params: dict[str, Any] = {"contextId": context_id, "pageSize": 100}
+        if page_token:
+            params["pageToken"] = page_token
+        response = _request(
+            endpoint, {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": "ListTasks", "params": params}, _timeout(ctx)
+        )
+        result = response.get("result") or {}
+        tasks.extend(result.get("tasks") or [])
+        page_token = str(result.get("nextPageToken") or "")
+        if not page_token:
+            break
+        if page_token in seen:
+            return None
+        seen.add(page_token)
+    else:
+        return None
     # A recovery candidate may replace a stale binding on this same local
     # handle, but must never take a task already bound to another handle.
     bound = {
@@ -234,25 +306,74 @@ def _recover_unique(ctx: Any, handle: dict[str, Any]) -> tuple[dict[str, Any], d
         for candidate in _handles(ctx)
         if candidate.get("handle_id") != handle.get("handle_id") and candidate.get("remote_task_id")
     }
-    candidates = [
-        task
+    candidates = {
+        task["id"]: task
         for task in tasks
         if isinstance(task, dict)
         and isinstance(task.get("id"), str)
+        and task.get("contextId") == context_id
+        and (not handle.get("remote_task_id") or task["id"] == handle["remote_task_id"])
         and str(task["id"]) not in bound
         and isinstance(task.get("metadata"), dict)
         and task["metadata"].get("requestMessageId") == message_id
-    ]
+    }
     if len(candidates) != 1:
         return None
-    return _record(ctx, candidates[0], endpoint, handle), candidates[0]
+    candidate = next(iter(candidates.values()))
+    return _record(ctx, candidate, endpoint, handle), candidate
 
 
 def _call(ctx: Any, args: dict[str, Any]) -> str:
+    # Hermes may invoke tools from different threads; reservation and send are
+    # serialized locally. Remote execution still returns immediately and runs concurrently.
+    with _STATE_LOCK:
+        try:
+            return _call_locked(ctx, args)
+        except ValueError as exc:
+            return _json({"ok": False, "error": str(exc)})
+
+
+def _call_locked(ctx: Any, args: dict[str, Any]) -> str:
     message = str(args.get("message") or "").strip()
     if not message:
         return _json({"ok": False, "error": "message is required"})
     continuation_id = str(args.get("task_id") or "")
+    logical = {key: value for key, value in args.items() if key not in {"message_id", "resume"}}
+    fingerprint = hashlib.sha256(json.dumps(logical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    supplied_id = str(args.get("message_id") or "")
+    if supplied_id:
+        for saved in _handles(ctx):
+            attempt = (saved.get("attempts") or {}).get(supplied_id)
+            if attempt:
+                if attempt != fingerprint:
+                    return _json({"ok": False, "error": "message_id was used for a different request"})
+                if args.get("resume"):
+                    return _resume_unsent(ctx, saved, args)
+                return _json(
+                    {
+                        "ok": True,
+                        "handle": saved["handle_id"],
+                        "handleInfo": _public_handle(saved),
+                        "deduplicated": True,
+                    }
+                )
+            if saved.get("message_id") == supplied_id:
+                return _json(
+                    {
+                        "ok": False,
+                        "handle": saved["handle_id"],
+                        "error": "legacy request identity exists; get/wait without resending",
+                    }
+                )
+    if not continuation_id and len(_handles(ctx)) >= MAX_HANDLES:
+        raise ValueError("handle capacity reached; no request sent")
+    origin = args.get("origin") or {}
+    if (
+        not isinstance(origin, dict)
+        or set(origin) - {"conversation_id", "question_id", "parent_job_id"}
+        or any(not isinstance(value, str) or len(value) > 256 for value in origin.values())
+    ):
+        raise ValueError("origin must contain short conversation_id, question_id or parent_job_id handles")
     preferences = {
         key: args[key]
         for key in ("model", "reasoning_effort", "require_exact")
@@ -336,16 +457,18 @@ def _call(ctx: Any, args: dict[str, Any]) -> str:
             "endpoint": endpoint,
             "message_id": message_id,
             "preferences": preferences,
+            "origin": origin,
             "state": "TASK_STATE_SUBMITTED",
             "attempt_number": 1,
             "updated_at": time.time(),
         }
-    a2a_message = {
-        **a2a_message,
-    }
+    a2a_message["metadata"] = {"origin": handle.get("origin") or origin}
+    attempts = dict(handle.get("attempts") or {})
+    attempts[message_id] = fingerprint
+    handle["attempts"] = attempts
     if preferences:
         a2a_message["extensions"] = [EXTENSION_URI]
-        a2a_message["metadata"] = {"executionPreferences": preferences}
+        a2a_message["metadata"]["executionPreferences"] = preferences
     payload = {
         "jsonrpc": "2.0",
         "id": uuid.uuid4().hex,
@@ -355,17 +478,20 @@ def _call(ctx: Any, args: dict[str, Any]) -> str:
     handle.update(
         {
             "rpc_id": payload["id"],
-            "request_fingerprint": uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(payload, sort_keys=True)).hex,
+            "request_fingerprint": fingerprint,
             "updated_at": time.time(),
         }
     )
     _save_handle(ctx, handle)
     try:
         task = _task_from_response(_request(endpoint, payload, _timeout(ctx), extension=bool(preferences)))
-        handle = _record(ctx, task, endpoint, handle)
+        handle = _record(ctx, task, endpoint, handle, from_submission=True)
         return _json({"ok": True, "handle": handle["handle_id"], "handleInfo": _public_handle(handle), "task": task})
     except urllib.error.HTTPError as exc:
-        _record_rejection(ctx, handle, str(exc))
+        if exc.code >= 500:
+            _mark_unknown(ctx, handle)
+        else:
+            _record_rejection(ctx, handle, str(exc))
         return _json(
             {"ok": False, "handle": handle["handle_id"], "handleInfo": _public_handle(handle), "error": str(exc)}
         )
@@ -402,14 +528,72 @@ def _call(ctx: Any, args: dict[str, Any]) -> str:
         )
 
 
+def _resume_unsent(ctx: Any, handle: dict[str, Any], args: dict[str, Any]) -> str:
+    """Explicit replay only after the receiver proves this exact attempt never started."""
+    try:
+        handle, task = _get(ctx, handle)
+        if not task or handle.get("message_id") != args.get("message_id"):
+            raise LocalHandleError("resume requires the current exact message_id")
+        metadata = task.get("metadata") or {}
+        if metadata.get("requestMessageId") != args["message_id"] or metadata.get("errorCode") not in {
+            "gateway_restarted_before_start",
+            "context_blocked_before_start",
+        }:
+            raise LocalHandleError("receiver has not proved this attempt was never started; use get/wait")
+        message: dict[str, Any] = {
+            "messageId": args["message_id"],
+            "contextId": handle["context_id"],
+            "role": "ROLE_USER",
+            "parts": [{"text": args["message"], "mediaType": "text/plain"}],
+            "metadata": {"origin": handle.get("origin") or {}},
+        }
+        if args.get("task_id"):
+            message["taskId"] = handle["remote_task_id"]
+        preferences = {key: args[key] for key in ("model", "reasoning_effort", "require_exact") if key in args}
+        if preferences:
+            message["extensions"] = [EXTENSION_URI]
+            message["metadata"]["executionPreferences"] = preferences
+        endpoint = _loopback_endpoint(str(handle["endpoint"]))
+        handle["state"] = "TASK_STATE_SUBMITTED"
+        _save_handle(ctx, handle)
+        response = _request(
+            endpoint,
+            {
+                "jsonrpc": "2.0",
+                "id": uuid.uuid4().hex,
+                "method": "SendMessage",
+                "params": {"message": message, "configuration": {"returnImmediately": True}},
+            },
+            _timeout(ctx),
+            extension=bool(preferences),
+        )
+        task = _task_from_response(response)
+        handle = _record(ctx, task, endpoint, handle, from_submission=True)
+        return _json({"ok": True, "handle": handle["handle_id"], "handleInfo": _public_handle(handle), "task": task})
+    except LocalHandleError as exc:
+        return _json({"ok": False, "handle": handle["handle_id"], "error": str(exc)})
+    except (OSError, ValueError) as exc:
+        _mark_unknown(ctx, handle)
+        return _json({"ok": False, "handle": handle["handle_id"], "state": "outcome_unknown", "error": str(exc)})
+
+
 def _get_tool(ctx: Any, args: dict[str, Any]) -> str:
     handle: dict[str, Any] | None = None
     try:
         handle = _load_handle(ctx, str(args.get("task_id") or ""))
+        if args.get("expected_origin") is not None and args["expected_origin"] != handle.get("origin", {}):
+            raise LocalHandleError("origin does not match the saved handle")
+        if args.get("acknowledge_result_id"):
+            if not handle.get("result_id") or args["acknowledge_result_id"] != handle["result_id"]:
+                raise LocalHandleError("receipt does not match this handle's result")
+            handle["acknowledged_result_id"] = handle["result_id"]
+            _save_handle(ctx, handle)
         handle, task = _get(ctx, handle)
         return _json(
             {"ok": task is not None, "handle": handle["handle_id"], "handleInfo": _public_handle(handle), "task": task}
         )
+    except LocalHandleError as exc:
+        return _json({"ok": False, "error": str(exc), "handleInfo": _public_handle(handle) if handle else None})
     except urllib.error.HTTPError as exc:
         if _is_redirect(exc) and handle is not None:
             _record_rejection(ctx, handle, str(exc))
@@ -489,11 +673,11 @@ def _wait(ctx: Any, args: dict[str, Any]) -> str:
                     }
                 )
             time.sleep(min(1.0, max(0.1, deadline - time.monotonic())))
-        _mark_unknown(ctx, handle)
         return _json(
             {
-                "ok": False,
-                "state": "outcome_unknown",
+                "ok": True,
+                "timed_out": True,
+                "state": handle["state"],
                 "handle": handle["handle_id"],
                 "handleInfo": _public_handle(handle),
             }
@@ -632,9 +816,20 @@ def register_tools(ctx: Any) -> None:
                 "Submit a Codex task and persist its A2A handle; never waits for completion.",
                 {
                     "message": {"type": "string"},
+                    "resume": {
+                        "type": "boolean",
+                        "description": "Replay the identical request only with proof it never started",
+                    },
                     "task_id": {"type": "string", "description": "Saved local handle for INPUT_REQUIRED continuation"},
                     "context_id": {"type": "string"},
-                    "message_id": {"type": "string"},
+                    "message_id": {
+                        "type": "string",
+                        "description": "Stable request identity; reuse only for the exact same request",
+                    },
+                    "origin": {
+                        "type": "object",
+                        "description": "conversation_id, question_id, parent_job_id handles only",
+                    },
                     "model": {"type": "string"},
                     "reasoning_effort": {"type": "string"},
                     "require_exact": {"type": "boolean"},
@@ -647,7 +842,11 @@ def register_tools(ctx: Any) -> None:
             _schema(
                 "codex_a2a_get",
                 "Get a previously persisted Codex A2A task.",
-                {"task_id": {"type": "string"}},
+                {
+                    "task_id": {"type": "string"},
+                    "acknowledge_result_id": {"type": "string"},
+                    "expected_origin": {"type": "object"},
+                },
                 ["task_id"],
             ),
         ),
@@ -655,7 +854,7 @@ def register_tools(ctx: Any) -> None:
             _wait,
             _schema(
                 "codex_a2a_wait",
-                "Poll a persisted task without resending; timeout becomes outcome_unknown.",
+                "Poll without resending; wait expiry preserves the last known task state.",
                 {"task_id": {"type": "string"}, "timeout": {"type": "number"}},
                 ["task_id"],
             ),

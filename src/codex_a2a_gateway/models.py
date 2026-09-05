@@ -95,6 +95,7 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
         TaskState.REJECTED.value,
     },
     TaskState.INPUT_REQUIRED.value: {
+        TaskState.OUTCOME_UNKNOWN.value,
         TaskState.QUEUED.value,
         TaskState.WORKING.value,
         TaskState.COMPLETED.value,
@@ -163,6 +164,8 @@ class TaskRecord(BaseModel):
     completed_at: str | None = None
     direction: Literal["outbound", "inbound"] = "outbound"
     codex_turn_id: str | None = None
+    origin: dict[str, str] = Field(default_factory=dict)
+    attempt_number: int = 1
     # Inbound-only, receiver-controlled execution preference decision.  This
     # deliberately excludes prompt content and is persisted so a task handle
     # remains explainable after a restart.
@@ -176,3 +179,16 @@ class A2ATaskResult(BaseModel):
     text: str = ""
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict, exclude=True)
+
+
+def result_receipt(task: TaskRecord) -> str | None:
+    """Stable consumption key, independent of polls, timestamps and retries."""
+    if task.state not in TURN_END_STATES:
+        return None
+    raw = json.dumps(
+        [task.bridge_task_id, task.message_id, task.state, task.result_text, task.artifacts],
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return "result-" + hashlib.sha256(raw.encode()).hexdigest()

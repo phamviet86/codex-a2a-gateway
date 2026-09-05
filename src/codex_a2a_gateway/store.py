@@ -16,9 +16,10 @@ from .models import (
     ContextRecord,
     TaskRecord,
     now_iso,
+    result_receipt,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class Store:
@@ -133,6 +134,19 @@ class Store:
                 con.execute("ALTER TABLE tasks ADD COLUMN codex_turn_id TEXT")
             if "execution_metadata_json" not in task_columns:
                 con.execute("ALTER TABLE tasks ADD COLUMN execution_metadata_json TEXT NOT NULL DEFAULT '{}'")
+            if "attempt_number" not in task_columns:
+                con.execute("ALTER TABLE tasks ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1")
+            if "origin_json" not in task_columns:
+                con.execute("ALTER TABLE tasks ADD COLUMN origin_json TEXT NOT NULL DEFAULT '{}'")
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS outbound_attempts (idempotency_key TEXT PRIMARY KEY, "
+                "bridge_task_id TEXT NOT NULL REFERENCES tasks(bridge_task_id), fingerprint TEXT NOT NULL, "
+                "message_id TEXT NOT NULL)"
+            )
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS result_receipts (result_id TEXT PRIMARY KEY, "
+                "bridge_task_id TEXT NOT NULL REFERENCES tasks(bridge_task_id), acknowledged_at TEXT NOT NULL)"
+            )
             con.execute(
                 "INSERT OR IGNORE INTO inbound_messages("
                 "message_id,bridge_task_id,context_id,request_fingerprint,created_at) "
@@ -154,6 +168,7 @@ class Store:
         if not row:
             return None
         data = dict(row)
+        data["origin"] = json.loads(data.pop("origin_json") or "{}")
         data["artifacts"] = json.loads(data.pop("artifacts_json") or "[]")
         data["execution_metadata"] = json.loads(data.pop("execution_metadata_json") or "{}")
         data["cancel_requested"] = bool(data["cancel_requested"])
@@ -300,8 +315,8 @@ class Store:
                         bridge_task_id,a2a_task_id,context_id,conversation_key,profile,endpoint,
                         request_id,message_id,idempotency_key,request_fingerprint,mode,state,
                         result_text,artifacts_json,error_code,error_message,cancel_requested,hop_count,
-                        created_at,updated_at,completed_at,direction,codex_turn_id,execution_metadata_json
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        created_at,updated_at,completed_at,direction,codex_turn_id,execution_metadata_json,origin_json
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         task.bridge_task_id,
@@ -328,6 +343,7 @@ class Store:
                         task.direction,
                         task.codex_turn_id,
                         json.dumps(task.execution_metadata, ensure_ascii=False),
+                        json.dumps(task.origin, ensure_ascii=False),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -346,8 +362,68 @@ class Store:
 
     def get_task_by_idempotency(self, key: str) -> TaskRecord | None:
         with self._lock, self._connect() as con:
+            attempt = con.execute("SELECT * FROM outbound_attempts WHERE idempotency_key=?", (key,)).fetchone()
+            if attempt:
+                task = self._task(
+                    con.execute("SELECT * FROM tasks WHERE bridge_task_id=?", (attempt["bridge_task_id"],)).fetchone()
+                )
+                return task.model_copy(update={"request_fingerprint": attempt["fingerprint"]}) if task else None
             row = con.execute("SELECT * FROM tasks WHERE idempotency_key=?", (key,)).fetchone()
         return self._task(row)
+
+    def acknowledge_result(self, task: TaskRecord, result_id: str) -> None:
+        if result_receipt(task) != result_id:
+            raise BridgeError("result_mismatch", "receipt does not identify the current result for this task")
+        with self._lock, self._connect() as con:
+            con.execute(
+                "INSERT OR IGNORE INTO result_receipts VALUES(?,?,?)", (result_id, task.bridge_task_id, now_iso())
+            )
+
+    def result_acknowledged(self, result_id: str | None) -> bool:
+        with self._lock, self._connect() as con:
+            return con.execute("SELECT 1 FROM result_receipts WHERE result_id=?", (result_id,)).fetchone() is not None
+
+    def mark_interrupted_outbound(self) -> None:
+        with self._lock, self._connect() as con:
+            con.execute(
+                "UPDATE tasks SET state='outcome_unknown',error_code='bridge_restarted',updated_at=? "
+                "WHERE direction='outbound' AND state IN ('queued','submitted','working')",
+                (now_iso(),),
+            )
+
+    def active_context_task(self, context_id: str) -> TaskRecord | None:
+        with self._lock, self._connect() as con:
+            row = con.execute(
+                "SELECT * FROM tasks WHERE context_id=? AND state IN "
+                "('queued','submitted','working','outcome_unknown') LIMIT 1",
+                (context_id,),
+            ).fetchone()
+        return self._task(row)
+
+    def continue_outbound(self, task_id: str, attempt: TaskRecord) -> TaskRecord:
+        with self._lock, self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            current = self._task(con.execute("SELECT * FROM tasks WHERE bridge_task_id=?", (task_id,)).fetchone())
+            if not current or current.state != "input_required":
+                raise BridgeError("invalid_task_state", "continuation requires input-required")
+            for key, fingerprint, message_id in (
+                (current.idempotency_key, current.request_fingerprint, current.message_id),
+                (attempt.idempotency_key, attempt.request_fingerprint, attempt.message_id),
+            ):
+                if key:
+                    con.execute(
+                        "INSERT OR IGNORE INTO outbound_attempts VALUES(?,?,?,?)",
+                        (key, task_id, fingerprint, message_id),
+                    )
+            con.execute(
+                "UPDATE tasks SET state='queued',message_id=?,request_fingerprint=?,"
+                "attempt_number=attempt_number+1,result_text='',"
+                "artifacts_json='[]',error_code=NULL,error_message=NULL,updated_at=? WHERE bridge_task_id=?",
+                (attempt.message_id, attempt.request_fingerprint, now_iso(), task_id),
+            )
+        result = self.get_task(task_id)
+        assert result is not None
+        return result
 
     def get_inbound_message(self, message_id: str) -> dict[str, str] | None:
         with self._lock, self._connect() as con:
@@ -406,8 +482,8 @@ class Store:
                         bridge_task_id,a2a_task_id,context_id,conversation_key,profile,endpoint,
                         request_id,message_id,idempotency_key,request_fingerprint,mode,state,
                         result_text,artifacts_json,error_code,error_message,cancel_requested,hop_count,
-                        created_at,updated_at,completed_at,direction,codex_turn_id,execution_metadata_json
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        created_at,updated_at,completed_at,direction,codex_turn_id,execution_metadata_json,origin_json
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         task.bridge_task_id,
@@ -434,6 +510,7 @@ class Store:
                         task.direction,
                         task.codex_turn_id,
                         json.dumps(task.execution_metadata, ensure_ascii=False),
+                        json.dumps(task.origin, ensure_ascii=False),
                     ),
                 )
                 con.execute(
@@ -559,10 +636,10 @@ class Store:
         current = self.get_task(bridge_task_id)
         if not current:
             raise BridgeError("task_not_found", "bridge task not found")
+        if current.state in TERMINAL_STATES:
+            return current
         target_state = state or current.state
         if state and state != current.state:
-            if current.state in TERMINAL_STATES:
-                return current
             allowed = ALLOWED_TRANSITIONS.get(current.state, set())
             if state not in allowed:
                 raise BridgeError("invalid_state_transition", f"cannot transition {current.state} -> {state}")
@@ -612,7 +689,8 @@ class Store:
     def append_task_result(self, bridge_task_id: str, text: str) -> TaskRecord:
         with self._lock, self._connect() as con:
             con.execute(
-                "UPDATE tasks SET result_text=result_text || ?,updated_at=? WHERE bridge_task_id=?",
+                "UPDATE tasks SET result_text=result_text || ?,updated_at=? WHERE bridge_task_id=? "
+                "AND state NOT IN ('completed','failed','canceled','rejected')",
                 (text, now_iso(), bridge_task_id),
             )
         task = self.get_task(bridge_task_id)
@@ -632,9 +710,9 @@ class Store:
                 (error_message, now, now),
             ).rowcount
             active_cursor = con.execute(
-                f"UPDATE tasks SET state='failed',error_code=?,error_message=?,updated_at=?,completed_at=? "
+                f"UPDATE tasks SET state='outcome_unknown',error_code=?,error_message=?,updated_at=?,completed_at=NULL "
                 f"WHERE direction='inbound' AND state IN ({placeholders})",
-                (error_code, error_message, now, now, *active),
+                (error_code, error_message, now, *active),
             ).rowcount
         return queued + active_cursor
 

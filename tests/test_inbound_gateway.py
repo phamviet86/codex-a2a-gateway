@@ -133,7 +133,7 @@ async def test_explicit_cli_fallback_does_not_advertise_input_required(tmp_path:
     await service.aclose()
 
 
-def test_restart_marks_active_task_failed_but_keeps_thread_mapping(tmp_path: Path) -> None:
+def test_restart_marks_active_task_unknown_and_keeps_thread_mapping(tmp_path: Path) -> None:
     settings = make_settings(tmp_path)
     store = Store(settings.state_path)
     context = store.get_or_create_context(
@@ -168,7 +168,7 @@ def test_restart_marks_active_task_failed_but_keeps_thread_mapping(tmp_path: Pat
     service = InboundService(settings, store=store, app_backend=FakeBackend(), cli_backend=FakeCLIBackend())
     recovered = service.get_task("task-restart")
     persisted = store.get_context(context_id="ctx-restart")
-    assert recovered.state == "failed" and recovered.error_code == "gateway_restarted"
+    assert recovered.state == "outcome_unknown" and recovered.error_code == "gateway_restarted"
     assert persisted and persisted.codex_thread_id == "thread-persisted"
 
 
@@ -205,8 +205,8 @@ def test_restart_recovers_every_active_task_beyond_old_page_limit(tmp_path: Path
             )
         )
     service = InboundService(settings, store=store, app_backend=FakeBackend(), cli_backend=FakeCLIBackend())
-    assert len(store.list_tasks(direction="inbound", state="failed", limit=100)) == 100
-    assert store.counts()["active_tasks"] == 0
+    assert len(store.list_tasks(direction="inbound", state="outcome_unknown", limit=100)) == 100
+    assert store.counts()["active_tasks"] == 105
     assert service.get_task("bulk-104").error_code == "gateway_restarted"
 
 

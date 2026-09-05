@@ -10,7 +10,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .codex_backend import AppServerBackend, BackendResult, CLIBackend, CodexBackend
-from .models import TERMINAL_STATES, TURN_END_STATES, BridgeError, TaskRecord, TaskState, now_iso, request_fingerprint
+from .models import (
+    TERMINAL_STATES,
+    TURN_END_STATES,
+    BridgeError,
+    TaskRecord,
+    TaskState,
+    now_iso,
+    request_fingerprint,
+    result_receipt,
+)
 from .settings import Settings
 from .store import Store
 
@@ -23,14 +32,14 @@ A2A_STATES = {
     TaskState.FAILED.value: "TASK_STATE_FAILED",
     TaskState.CANCELED.value: "TASK_STATE_CANCELED",
     TaskState.REJECTED.value: "TASK_STATE_REJECTED",
-    TaskState.OUTCOME_UNKNOWN.value: "TASK_STATE_FAILED",
+    TaskState.OUTCOME_UNKNOWN.value: "TASK_STATE_WORKING",
 }
 INTERNAL_STATES = {
     "TASK_STATE_SUBMITTED": (TaskState.QUEUED.value, TaskState.SUBMITTED.value),
-    "TASK_STATE_WORKING": (TaskState.WORKING.value,),
+    "TASK_STATE_WORKING": (TaskState.WORKING.value, TaskState.OUTCOME_UNKNOWN.value),
     "TASK_STATE_INPUT_REQUIRED": (TaskState.INPUT_REQUIRED.value,),
     "TASK_STATE_COMPLETED": (TaskState.COMPLETED.value,),
-    "TASK_STATE_FAILED": (TaskState.FAILED.value, TaskState.OUTCOME_UNKNOWN.value),
+    "TASK_STATE_FAILED": (TaskState.FAILED.value,),
     "TASK_STATE_CANCELED": (TaskState.CANCELED.value,),
     "TASK_STATE_REJECTED": (TaskState.REJECTED.value,),
 }
@@ -69,6 +78,7 @@ class InboundService:
             ),
         }
         self._context_locks: dict[str, asyncio.Lock] = {}
+        self._execution_locks: dict[str, asyncio.Lock] = {}
         self._semaphore = asyncio.Semaphore(settings.max_concurrency)
         self._admission_lock = asyncio.Lock()
         self._workers: dict[str, asyncio.Task[None]] = {}
@@ -80,7 +90,7 @@ class InboundService:
             error_code="gateway_restarted",
             error_message=(
                 "The gateway restarted while this task was active. The context-to-thread mapping was retained; "
-                "send a new message in the same context to continue."
+                "retrieve this same task; an uncertain execution must not be resubmitted."
             ),
         )
 
@@ -102,6 +112,13 @@ class InboundService:
             "inputRequired": False,
             "cancel": "best-effort",
             "pushNotifications": False,
+            "resultDelivery": "pull",
+            "exactRequestCorrelation": "metadata.requestMessageId",
+            "workerTools": {
+                "status": "unverified",
+                "scope": "execution-host Codex configuration",
+                "desktopToolsInherited": False,
+            },
         }
 
     @staticmethod
@@ -137,7 +154,9 @@ class InboundService:
                     }
                 ],
             }
-        metadata: dict[str, Any] = {}
+        metadata: dict[str, Any] = {"origin": task.origin, "resultDelivery": "pull", "resultId": result_receipt(task)}
+        if task.state == "outcome_unknown":
+            metadata["bridgeState"] = "outcome_unknown"
         # This non-sensitive correlation value lets a durable client recover
         # only the task created by its original A2A message, not any task that
         # happens to share a reused context.
@@ -162,7 +181,15 @@ class InboundService:
         task_id: str | None = None,
         execution_preferences: dict[str, Any] | None = None,
         subscriber: asyncio.Queue[TaskRecord] | None = None,
+        origin: dict[str, str] | None = None,
     ) -> tuple[TaskRecord, bool]:
+        origin = origin or {}
+        if set(origin) - {"conversation_id", "question_id", "parent_job_id"} or any(
+            not isinstance(value, str) or len(value) > 256 for value in origin.values()
+        ):
+            raise BridgeError(
+                "invalid_origin", "origin must contain short conversation, question or parent job handles"
+            )
         message = message.strip()
         if not message:
             raise BridgeError("invalid_message", "message must contain text")
@@ -177,6 +204,8 @@ class InboundService:
                 raise BridgeError("task_not_found", "inbound taskId was not found")
             if context_id and context_id != continued_task.context_id:
                 raise BridgeError("task_context_mismatch", "message taskId and contextId refer to different tasks")
+            if origin and origin != continued_task.origin:
+                raise BridgeError("origin_mismatch", "continuation must retain its originating job")
             context_id = continued_task.context_id
         existing_message = self.store.get_inbound_message(message_id)
         if not context_id and existing_message:
@@ -198,9 +227,11 @@ class InboundService:
             existing = self.store.get_task(existing_message["bridge_task_id"])
             if not existing:
                 raise BridgeError("task_not_found", "messageId refers to a missing task")
+            if origin and existing.origin != origin:
+                raise BridgeError("idempotency_conflict", "origin does not match the original request")
             if subscriber is not None:
                 self._bind_subscriber(existing.bridge_task_id, subscriber)
-            return await self._resume_deduplicated(existing, message), True
+            return await self._resume_deduplicated(existing, message, message_id), True
         if continued_task and continued_task.state != TaskState.INPUT_REQUIRED.value:
             raise BridgeError("invalid_task_state", "taskId continuation is only valid for input-required tasks")
         if continued_task and execution_preferences:
@@ -223,7 +254,7 @@ class InboundService:
                 ):
                     if subscriber is not None:
                         self._bind_subscriber(existing.bridge_task_id, subscriber)
-                    return await self._resume_deduplicated(existing, message), True
+                    return await self._resume_deduplicated(existing, message, message_id), True
                 raise BridgeError("idempotency_conflict", "messageId was already used for a different request")
             async with self._admission_lock:
                 if self.store.count_active_inbound_tasks() >= self.settings.inbound_admission_limit:
@@ -268,6 +299,7 @@ class InboundService:
                         mode="async",
                         direction="inbound",
                         execution_metadata=execution_preferences or {},
+                        origin=origin,
                         created_at=now,
                         updated_at=now,
                     )
@@ -293,9 +325,11 @@ class InboundService:
     def _bind_subscriber(self, task_id: str, queue: asyncio.Queue[TaskRecord]) -> None:
         self._subscribers.setdefault(task_id, set()).add(queue)
 
-    async def _resume_deduplicated(self, task: TaskRecord, message: str) -> TaskRecord:
+    async def _resume_deduplicated(self, task: TaskRecord, message: str, message_id: str) -> TaskRecord:
         async with self._admission_lock:
             latest = self.store.get_task(task.bridge_task_id) or task
+            if latest.message_id != message_id:
+                return latest
             if latest.state == TaskState.FAILED.value and latest.error_code == "gateway_restarted_before_start":
                 if self.store.count_active_inbound_tasks() >= self.settings.inbound_admission_limit:
                     raise BridgeError("server_overloaded", "gateway worker admission is full", retryable=True)
@@ -362,8 +396,17 @@ class InboundService:
         task = self.store.get_task(task_id)
         if not task:
             return
-        lock = self._context_locks.setdefault(task.context_id, asyncio.Lock())
+        lock = self._execution_locks.setdefault(task.context_id, asyncio.Lock())
         async with lock:
+            unresolved = self.store.list_tasks(context_id=task.context_id, state="outcome_unknown", limit=1)
+            if unresolved:
+                blocked = self.store.update_task(
+                    task_id,
+                    error_code="context_blocked_before_start",
+                    error_message="A prior execution in this context is unresolved; this request was not sent.",
+                )
+                await self._notify(blocked)
+                return
             await self._run_unlocked(task_id, message)
 
     async def _run_unlocked(self, task_id: str, message: str) -> None:
@@ -420,7 +463,12 @@ class InboundService:
             if current and current.state not in TERMINAL_STATES:
                 current = self.store.update_task(
                     task_id,
-                    state=TaskState.FAILED.value,
+                    state=(
+                        TaskState.OUTCOME_UNKNOWN.value
+                        if exc.code
+                        in {"codex_timeout", "app_server_closed", "app_server_protocol", "cli_closed", "cli_protocol"}
+                        else TaskState.FAILED.value
+                    ),
                     error_code=exc.code,
                     error_message=exc.message,
                     execution_metadata=current.execution_metadata,
@@ -431,7 +479,7 @@ class InboundService:
             if current and current.state not in TERMINAL_STATES:
                 current = self.store.update_task(
                     task_id,
-                    state=TaskState.FAILED.value,
+                    state=TaskState.OUTCOME_UNKNOWN.value,
                     error_code="backend_internal",
                     error_message=f"Codex backend failed: {type(exc).__name__}",
                     execution_metadata=current.execution_metadata,
@@ -446,7 +494,7 @@ class InboundService:
         if worker:
             with suppress(TimeoutError):
                 await asyncio.wait_for(asyncio.shield(worker), timeout=timeout or self.settings.codex_timeout)
-        return self.store.get_task(task.bridge_task_id) or task
+        return await self.refresh_task(task.bridge_task_id)
 
     async def updates(
         self,
@@ -470,6 +518,30 @@ class InboundService:
             subscribers.discard(queue)
             if not subscribers:
                 self._subscribers.pop(task.bridge_task_id, None)
+
+    async def refresh_task(self, task_id: str) -> TaskRecord:
+        task = self.get_task(task_id)
+        if task.state != "outcome_unknown":
+            return task
+        context = self.store.get_context(context_id=task.context_id)
+        backend = self.backends.get(context.backend or "") if context else None
+        recover = getattr(backend, "recover", None)
+        if not recover or not context or not context.codex_thread_id or not task.codex_turn_id:
+            return task
+        try:
+            result = await recover(context.codex_thread_id, task.codex_turn_id)
+        except (BridgeError, OSError, TimeoutError):
+            return task
+        if result and result.thread_id == context.codex_thread_id and result.turn_id == task.codex_turn_id:
+            task = self.store.update_task(
+                task.bridge_task_id,
+                state=result.state,
+                result_text=result.text,
+                error_code=result.error_code or "",
+                error_message=result.error_message or "",
+            )
+            await self._notify(task)
+        return task
 
     def get_task(self, task_id: str) -> TaskRecord:
         task = self.store.get_task(task_id)
