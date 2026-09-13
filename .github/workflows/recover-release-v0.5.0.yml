@@ -1,0 +1,42 @@
+name: Recover queued v0.5.0 publication
+
+on:
+  push:
+    branches: [maintenance/retry-v0.5.0-publication]
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    if: github.repository == 'phamviet86/codex-a2a-gateway'
+    runs-on: macos-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: phamviet86/codex-a2a-gateway
+      TARGET_RUN: '34737750328'
+      TARGET_SHA: cd11b74557209c7b279f65c72be0bc922e4862e4
+    steps:
+      - name: Cancel only the identified orphaned queued publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_file="$RUNNER_TEMP/publication-run.json"
+          gh api "repos/$GH_REPO/actions/runs/$TARGET_RUN" > "$run_file"
+          test "$(jq -r '.name' "$run_file")" = 'Publish v0.5.0'
+          test "$(jq -r '.event' "$run_file")" = 'workflow_run'
+          test "$(jq -r '.head_sha' "$run_file")" = "$TARGET_SHA"
+          test "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')" = "$TARGET_SHA"
+          if [ "$(jq -r '.status' "$run_file")" != queued ]; then
+            echo 'Publication is no longer queued; no action taken.'
+            exit 0
+          fi
+          gh api "repos/$GH_REPO/actions/runs/$TARGET_RUN/jobs" > "$RUNNER_TEMP/publication-jobs.json"
+          jq -e '.jobs | length == 1' "$RUNNER_TEMP/publication-jobs.json" >/dev/null
+          jq -e '.jobs[0] | .name == "publish" and .status == "queued" and ((.runner_id // 0) == 0) and ((.steps // []) | length == 0)' "$RUNNER_TEMP/publication-jobs.json" >/dev/null
+          gh api --method POST "repos/$GH_REPO/actions/runs/$TARGET_RUN/cancel"
+          echo 'Cancellation requested for the identified queued publication; source, CI, tags and releases were not modified.'
