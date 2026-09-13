@@ -61,6 +61,15 @@ def main() -> int:
             print(f"forbidden distribution member: {distribution}: {name}")
         return 1
     for path in distributions:
+        names = members(path)
+        for skill in ("codex-a2a-setup", "codex-a2a"):
+            suffix = f"codex_a2a_gateway/skills/{skill}/SKILL.md"
+            if not any(name.endswith(suffix) for name in names):
+                print(f"missing packaged skill: {path.name}: {skill}")
+                return 1
+        if not any(name.endswith("codex-a2a-setup/references/workstation.md") for name in names):
+            print(f"missing workstation reference: {path.name}")
+            return 1
         print(f"checked {path.name}: {len(members(path))} members")
     return 0
 

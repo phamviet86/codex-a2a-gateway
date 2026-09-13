@@ -11,7 +11,7 @@
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
-**Public beta · v0.4.0**
+**Public beta · v0.5.0**
 
 English | [Tiếng Việt](README.vi.md)
 
@@ -24,7 +24,7 @@ Hermes Agent is the first verified peer, not the product boundary. The inbound e
 
 > **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
 
-> **Version scope:** the published `v0.4.0` wheel includes the durable Hermes client, two-way timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
+> **Version scope:** `v0.5.0` adds packaged setup/usage skills, agent-led workstation onboarding, direction-specific readiness and MCP compatibility fixes. It retains the v0.4.0 durable-task contract.
 
 ## Architecture
 
@@ -71,16 +71,22 @@ The release wheel and clean-install path are tested in CI on macOS and Linux. Wi
 
 The App Server backend follows the official [Codex App Server protocol](https://learn.chatgpt.com/docs/app-server): initialize once, start or resume a thread, start a turn, and consume streamed notifications. WebSocket App Server transport is not used by this project.
 
-## Install
+## Install with your agent
 
-For an operator machine, install the release wheel into a dedicated virtual environment without cloning the repository:
+Give your agent this request:
+
+> Install Codex A2A Gateway v0.5.0 from its release wheel into a dedicated Python 3.11 environment, install its skills, then use `codex-a2a-setup` to configure this machine. Reuse existing credentials and settings; ask only for required missing values such as direction and inbound workspace. Verify the selected transport and client tool discovery.
+
+The agent can install without cloning the repository:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
-"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
+
+The setup skill configures and verifies the selected `outbound`, `inbound`, or `both` direction; `codex-a2a` teaches normal tool use and durable task retrieval. Inbound needs an explicit workspace; generic inbound clients do not need Hermes. Skill installation alone does not change MCP registrations or start services. See [agent-led setup](docs/agent-setup.md) for installation checks, persistent configuration and the worker/RAG visibility boundary.
 
 See the complete [deployment guide](docs/deployment.md) for prerequisites, MCP registration, Hermes setup, state migration, upgrades, rollback, and uninstall. For a guided Vietnamese setup of both Codex and Hermes directions, see [Thiết lập Codex + Hermes](docs/setup-codex-hermes.vi.md).
 
@@ -169,7 +175,7 @@ hermes tools enable a2a --platform cli
 
 ### Durable Hermes client
 
-The published `v0.4.0` wheel ships this plugin. Enable only its dedicated CLI toolset:
+The `v0.5.0` wheel ships this plugin. Enable only its dedicated CLI toolset:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -268,7 +274,7 @@ Report vulnerabilities through GitHub private vulnerability reporting as describ
 
 Default tests use an ephemeral fake A2A server and do not require Hermes or a live model. `doctor` is read-only; `smoke` sends a real Hermes task and must be run intentionally with harmless content.
 
-Current release evidence is in [v0.4.0 release validation](docs/testing-report-v0.4.0.md). Coding agents must also follow [AGENTS.md](AGENTS.md).
+Current release evidence is in [v0.5.0 validation](docs/testing-report-v0.5.0.md); [v0.4.0 live validation](docs/testing-report-v0.4.0.md) remains historical evidence for the inherited durability contract. Coding agents must also follow [AGENTS.md](AGENTS.md).
 
 ## Migration from the old name
 

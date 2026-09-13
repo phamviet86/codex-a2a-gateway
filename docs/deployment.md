@@ -1,5 +1,7 @@
 # Deploy on another computer
 
+For the recommended agent-led setup, install v0.5.0 and its packaged skills, then ask the agent to use `codex-a2a-setup`. See [agent-led workstation setup](agent-setup.md) for the request and configuration workflow.
+
 This guide installs `codex-a2a-gateway` from a versioned GitHub release asset without cloning the source repository. The supported beta topology is one local user running Codex, Hermes, and the gateway on the same macOS or Linux computer. For a concise Vietnamese path that configures and verifies both Codex and Hermes directions, see [Thiết lập Codex + Hermes](setup-codex-hermes.vi.md).
 
 ## Support matrix
@@ -30,32 +32,33 @@ hermes --version
 
 Hermes is optional if the machine only exposes Codex to a different A2A client.
 
-## 2. Install release v0.4.0
+## 2. Install release v0.5.0
 
 Use a dedicated virtual environment so the gateway does not modify the system Python:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 
 Expected version output:
 
 ```text
-codex-a2a-gateway 0.4.0
+codex-a2a-gateway 0.5.0
 ```
 
-The published `v0.4.0` wheel includes the durable Hermes plugin, timeout recovery, `INPUT_REQUIRED` continuation, and the optional Hermes/A2A → Codex execution-preferences extension.
+The `v0.5.0` wheel includes setup/usage skills and direction-specific readiness as well as the durable Hermes plugin, timeout recovery, `INPUT_REQUIRED` continuation and optional inbound execution preferences.
 
 For a higher-assurance installation, download the wheel, source distribution, and `SHA256SUMS` release asset, verify the downloaded files against that manifest, then install the verified wheel. This works on macOS (`shasum`) and Linux (`sha256sum`):
 
 ```bash
 release_dir=$(mktemp -d)
-release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0"
-wheel="codex_a2a_gateway-0.4.0-py3-none-any.whl"
-sdist="codex_a2a_gateway-0.4.0.tar.gz"
+release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0"
+wheel="codex_a2a_gateway-0.5.0-py3-none-any.whl"
+sdist="codex_a2a_gateway-0.5.0.tar.gz"
 
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
 curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
@@ -114,7 +117,7 @@ hermes tools enable a2a --platform cli
 
 ### Durable Hermes client
 
-`a2a_call` is Hermes' synchronous convenience tool. The published `v0.4.0` wheel includes this plugin; install it and enable only its separate CLI toolset:
+`a2a_call` is Hermes' synchronous convenience tool. The published `v0.5.0` wheel includes this plugin; install it and enable only its separate CLI toolset:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -218,7 +221,27 @@ For streaming instead of polling, call `SendStreamingMessage` with the same mess
 - Treat the database as sensitive: it can contain results, artifacts, mappings, statuses, and minimal error information.
 - A machine migration may copy the stopped database to the same path, but authentication and workspace paths must be configured again on the destination.
 
-## 7. Exact VPS upgrade from v0.3.0 to v0.4.0
+## 7. Upgrade from v0.4.0 to v0.5.0
+
+Stop the existing gateway and close clients owning its MCP process before upgrading. Preserve the state files and current launcher/client settings; v0.5.0 adds no schema migration. Back up stopped state according to the ownership rules above. Install the new wheel into the same environment, then install the packaged skills:
+
+```bash
+gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
+gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
+"$gateway_venv/bin/python" -m pip install --upgrade --force-reinstall \
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
+"$gateway_bin" --version
+"$gateway_bin" install-skills --dry-run
+"$gateway_bin" install-skills
+```
+
+Retain a custom skills root with `--dest` if one was previously selected. If managed skills differ, review them and use `--replace`; unmanaged directories are preserved and reported as conflicts. Refresh the bundled Hermes plugin only when using it (`install-hermes-plugin --replace` after reviewing differences). An unchanged absolute MCP command does not need re-registration. Reopen the client to discover the new skills. Use `codex-a2a-setup` for configuration changes, and run each selected `doctor --mode` through its actual persistent launcher. Authentication/model tasks remain an opt-in live check.
+
+For new installations using both directions, use separate MCP/inbound state files and launchers. Do not silently migrate an existing shared state file; preserve it for a deliberate ownership/migration decision.
+
+### Historical upgrade: v0.3.0 to v0.4.0
+
+The following sequence documents the prior schema-5 upgrade, not the current release command.
 
 Schema 5 adds origin, attempt and receipt metadata without discarding existing records. This sequence keeps old and new gateway processes from writing the same SQLite file. Substitute your actual service/supervisor commands; the project does not ship a systemd/launchd unit.
 
@@ -266,12 +289,14 @@ curl --fail http://127.0.0.1:9910/.well-known/agent-card.json
 
 ## 8. Rollback and uninstall
 
-Stop the v0.4.0 gateway and close MCP writers before rollback. Reinstall v0.3.0, then start only that version:
+Stop the v0.5.0 gateway and close MCP writers before rollback. Reinstall v0.4.0, then start only that version:
 
 ```bash
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.3.0/codex_a2a_gateway-0.3.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
 ```
+
+The v0.4.0 binary does not support `install-skills` or `doctor --mode`. Retain state and review/remove only installer-managed v0.5.0 skills separately if rolling back; do not ask the old binary to execute their new commands.
 
 Do **not** automatically restore the SQLite backup: a backup can be stale relative to completed work. Keep it for operator review and restore only through a separate, deliberate recovery procedure. After either operation, run `--version`, `doctor`, and `codex mcp get codex-a2a-gateway` before resuming work.
 
@@ -288,7 +313,7 @@ The commands above do not delete the SQLite state database. Remove state only af
 
 | Symptom | Safe check and response |
 |---|---|
-| `--version` is not `0.4.0`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
+| `--version` is not `0.5.0`, or wheel installation fails | Repeat the manifest-verified install above. Do not use a cached or differently named wheel as a substitute. |
 | `doctor` reports Hermes unreachable | Keep `HERMES_A2A_ENDPOINT` on loopback, confirm `hermes gateway run` is active, then rerun `doctor`. Do not weaken the loopback-only endpoint policy to reach an arbitrary remote URL. |
 | Codex does not show the MCP server | Run `codex mcp get codex-a2a-gateway`, verify its command is the installed absolute `$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway` path, then restart or open a new Codex client. Do not start `serve` manually. |
 | Agent Card or `/health` is unavailable | Confirm the foreground `gateway` process is still running and the selected `CODEX_WORKSPACE_ROOT` is accessible. If port 9910 is occupied, choose another loopback `CODEX_A2A_PORT` and update the A2A peer URL together. |
