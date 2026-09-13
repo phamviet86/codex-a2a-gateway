@@ -8,7 +8,7 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Public beta · v0.4.0**
+**Public beta · v0.5.0**
 
 `codex-a2a-gateway` giúp Codex giao tiếp hai chiều theo chuẩn A2A v1.0:
 
@@ -21,20 +21,26 @@ Hermes là peer đầu tiên đã được kiểm thử, không phải giới h�
 
 > Đây là dự án cộng đồng độc lập, không phải sản phẩm chính thức hay được bảo trợ bởi OpenAI/Codex hoặc Nous Research/Hermes Agent.
 
-> **Phạm vi phiên bản:** wheel `v0.4.0` đã phát hành có plugin durable Hermes, recovery timeout hai chiều, tiếp tục `INPUT_REQUIRED` và extension model/reasoning tùy chọn cho chiều Hermes/A2A → Codex.
+> **Phạm vi phiên bản:** `v0.5.0` bổ sung skills setup/sử dụng, cài đặt do agent thực hiện, kiểm tra theo chiều kết nối và sửa tương thích MCP. Hợp đồng job bền vững từ v0.4.0 được giữ nguyên.
 
-## Cài đặt
+## Cài đặt bằng agent
 
-Yêu cầu CPython `>=3.11,<3.12`, Codex CLI đã đăng nhập và Hermes Agent nếu cần chiều Codex → Hermes.
+Gửi yêu cầu sau cho agent:
 
-Trên máy vận hành, cài trực tiếp release wheel vào virtualenv riêng, không cần clone source:
+> Cài Codex A2A Gateway v0.5.0 từ release wheel vào môi trường Python 3.11 riêng, cài skills đi kèm, rồi dùng `codex-a2a-setup` cấu hình máy này. Giữ thông tin đăng nhập và cấu hình hiện có; chỉ hỏi dữ liệu bắt buộc còn thiếu như chiều kết nối và workspace inbound. Kiểm tra kết nối và xác nhận client thấy tools.
+
+Agent cài trực tiếp, không cần clone repository:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
-"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
+"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
+
+Skill setup dùng CLI để cấu hình/kiểm tra chiều `outbound`, `inbound`, hoặc `both`; skill `codex-a2a` hướng dẫn sử dụng tools và nhận kết quả. Mặc định cài vào `$CODEX_HOME/skills` nếu có, nếu không là `~/.agents/skills`; hỗ trợ `--dest`, `--dry-run`, `--check` và `--replace` cho nội dung do installer quản lý. Cài skill chưa tự đăng ký MCP hay bật dịch vụ. Xem [quy trình đầy đủ](docs/agent-setup.md).
+
+Inbound bằng A2A client khác không cần Hermes. Gateway không có API key dùng chung: Codex/Hermes giữ xác thực riêng; token A2A chỉ cần khi endpoint yêu cầu.
 
 Release wheel và quy trình cài sạch được kiểm tra trên macOS/Linux. Windows/WSL chưa được xác minh. Với luồng từng bước để cài, cấu hình và kiểm tra **cả hai chiều** Codex + Hermes, xem [hướng dẫn thiết lập tiếng Việt](docs/setup-codex-hermes.vi.md). Xem [hướng dẫn triển khai trên máy khác](docs/deployment.md) để migrate state, nâng cấp, rollback hoặc gỡ cài đặt.
 
@@ -109,7 +115,7 @@ hermes tools enable a2a --platform cli
 
 ### Plugin reliable Hermes
 
-Wheel `v0.4.0` đã phát hành có plugin này; bật plugin và toolset riêng cho CLI:
+Wheel `v0.5.0` có plugin này; bật plugin và toolset riêng cho CLI:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"

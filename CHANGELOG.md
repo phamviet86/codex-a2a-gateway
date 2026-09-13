@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 — 2026-09-13
+
+- Package agent-led workstation setup and usage skills with an idempotent `install-skills` CLI, read-only checks/plans, managed replacement and an absolute nonsecret runtime reference.
+- Add mode-specific `doctor` checks; inbound readiness does not require Hermes and explicitly leaves authentication, model execution and worker tools unverified. Document persistent launchers, separate state ownership and release-wheel installation.
+- Preserve structured/text MCP failure payloads while marking invocation failures `isError`; unknown tools return JSON-RPC invalid params. Advertise conservative effects for delegated agent work and test modern/legacy stdio compatibility.
+
 
 ## 0.4.0 — 2026-09-05
 

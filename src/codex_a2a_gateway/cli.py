@@ -14,18 +14,26 @@ from . import __version__
 from .core import BridgeService
 from .gateway import run_gateway
 from .models import TERMINAL_STATES, BridgeError
+from .readiness import inbound_status
 from .server import run_stdio
 from .settings import Settings
+from .skill_install import install_skills
 
 
-async def _status() -> int:
-    service = BridgeService(Settings.from_env())
-    try:
-        result = await service.status()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result.get("ok") else 1
-    finally:
-        await service.aclose()
+async def _status(mode: str = "outbound") -> int:
+    settings = Settings.from_env()
+    results = {}
+    if mode in {"outbound", "both"}:
+        service = BridgeService(settings)
+        try:
+            results["outbound"] = await service.status()
+        finally:
+            await service.aclose()
+    if mode in {"inbound", "both"}:
+        results["inbound"] = await inbound_status(settings)
+    result = results[mode] if mode != "both" else {"ok": all(r.get("ok") for r in results.values()), **results}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("ok") else 1
 
 
 async def _smoke(message: str, conversation_key: str) -> int:
@@ -53,7 +61,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="Run the MCP server over stdio")
     sub.add_parser("gateway", help="Run the standalone inbound A2A HTTP gateway")
-    sub.add_parser("doctor", help="Check gateway state, Hermes health, and Agent Card")
+    doctor = sub.add_parser("doctor", help="Check selected transport without submitting a model task")
+    doctor.add_argument("--mode", choices=("outbound", "inbound", "both"), default="outbound")
+    skills = sub.add_parser("install-skills", help="Install the bundled setup and usage skills")
+    skills.add_argument("--dest", type=Path, help="Skill root; default: CODEX_HOME/skills or ~/.agents/skills")
+    inspection = skills.add_mutually_exclusive_group()
+    inspection.add_argument(
+        "--check", action="store_true", help="Read-only verification; nonzero if missing or different"
+    )
+    inspection.add_argument("--dry-run", action="store_true", help="Show proposed changes without writing")
+    skills.add_argument("--replace", action="store_true", help="Replace differing managed files after review")
     smoke = sub.add_parser("smoke", help="Send one explicit harmless live test message")
     smoke.add_argument("message")
     smoke.add_argument("--conversation-key", default="bridge-cli-smoke")
@@ -123,7 +140,14 @@ def main() -> None:
         run_gateway()
         return
     if command == "doctor":
-        raise SystemExit(asyncio.run(_status()))
+        raise SystemExit(asyncio.run(_status(args.mode)))
+    if command == "install-skills":
+        try:
+            result, code = install_skills(args.dest, check=args.check, dry_run=args.dry_run, replace=args.replace)
+        except OSError as exc:
+            result, code = {"ok": False, "error": type(exc).__name__}, 2
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        raise SystemExit(code)
     if command == "smoke":
         raise SystemExit(asyncio.run(_smoke(args.message, args.conversation_key)))
     if command == "install-hermes-plugin":

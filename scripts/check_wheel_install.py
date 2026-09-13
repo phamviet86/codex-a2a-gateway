@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import tempfile
@@ -46,6 +47,19 @@ def main() -> int:
         for command in ("codex-a2a-gateway", "codex-hermes-a2a-bridge"):
             run(str(executable(venv_root, command)), "--help")
             run(str(executable(venv_root, command)), "--version")
+        # Run outside the checkout, with an isolated skill root and no user config mutation.
+        skill_root = Path(temporary) / "isolated skills"
+        command = str(executable(venv_root, "codex-a2a-gateway"))
+        arguments = [command, "install-skills", "--dest", str(skill_root)]
+        subprocess.run([*arguments, "--dry-run"], cwd=temporary, check=True)
+        assert not skill_root.exists()
+        subprocess.run(arguments, cwd=temporary, check=True)
+        subprocess.run(arguments, cwd=temporary, check=True)
+        subprocess.run([*arguments, "--check"], cwd=temporary, check=True)
+        for name in ("codex-a2a-setup", "codex-a2a"):
+            runtime = json.loads((skill_root / name / "references/runtime.json").read_text())
+            assert runtime["command"][0] == str(python)
+            subprocess.run([*runtime["command"], "--version"], cwd=temporary, check=True)
 
     print(f"clean wheel install passed: {wheel.name}")
     return 0

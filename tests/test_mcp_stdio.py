@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
 
 import pytest
 from fake_a2a import FakeA2AServer
+from jsonschema import validate
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.shared.exceptions import MCPError
 
 
 @pytest.mark.asyncio
@@ -40,9 +43,25 @@ async def test_mcp_stdio_initialize_list_and_all_tools(fake_a2a: FakeA2AServer, 
             "hermes_contexts",
         }
         assert {tool.name for tool in tools.tools} == expected
+        for tool in tools.tools:
+            assert tool.input_schema["type"] == "object"
+            assert tool.output_schema["type"] == "object"
+        chat_description = next(tool for tool in tools.tools if tool.name == "hermes_chat")
+        assert chat_description.annotations.destructive_hint is True
+        assert chat_description.annotations.open_world_hint is True
 
         status = await session.call_tool("hermes_status")
         assert status.structured_content["ok"] is True
+        assert status.is_error is False
+        validate(status.structured_content, next(t for t in tools.tools if t.name == "hermes_status").output_schema)
+        assert json.loads(status.content[0].text) == status.structured_content
+        missing = await session.call_tool("hermes_task_get", {"task_id": "missing-task"})
+        assert missing.is_error is True
+        assert missing.structured_content["ok"] is False
+        assert json.loads(missing.content[0].text) == missing.structured_content
+        with pytest.raises(MCPError) as unknown:
+            await session.call_tool("unknown_tool", {})
+        assert unknown.value.code == -32602
         chat = await session.call_tool(
             "hermes_chat",
             {"message": "long operation stdio", "conversation_key": "stdio-conv", "mode": "async"},

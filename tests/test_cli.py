@@ -10,7 +10,7 @@ from codex_a2a_gateway.server import mcp
 
 
 def test_package_version_is_current_release_version() -> None:
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.5.0"
     assert version("codex-a2a-gateway") == __version__
 
 
@@ -32,3 +32,4 @@ def test_bundled_hermes_plugin_asset_is_present() -> None:
     asset = resources.files("codex_a2a_gateway.hermes_plugin") / "asset"
     assert (asset / "plugin.yaml").is_file()
     assert (asset / "tools.py").is_file()
+    assert f"version: {__version__}\n" in (asset / "plugin.yaml").read_text()

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, Literal
 
 from mcp import types
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
+from mcp.shared.exceptions import MCPError
 from pydantic import Field
 
 from . import __version__
@@ -23,7 +26,18 @@ INSTRUCTIONS = (
     "Never delegate a worker job back to its parent. This server is not Hermes administration."
 )
 
-mcp = MCPServer(
+
+class GatewayMCPServer(MCPServer[Any]):
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context[Any, Any] | None = None
+    ) -> types.CallToolResult | types.InputRequiredResult:
+        # Unknown methods are protocol errors, not a failure executing a known tool.
+        if name not in {tool.name for tool in await self.list_tools()}:
+            raise MCPError(code=types.INVALID_PARAMS, message=f"Unknown tool: {name}")
+        return await super().call_tool(name, arguments, context)
+
+
+mcp = GatewayMCPServer(
     "codex-a2a-gateway",
     description="Outbound MCP adapter from Codex to the Hermes default agent over A2A v1.0.",
     instructions=INSTRUCTIONS,
@@ -41,17 +55,29 @@ def get_service() -> BridgeService:
     return _service
 
 
-async def _safe(call: Any) -> dict[str, Any]:
+ToolResult = Annotated[types.CallToolResult, dict[str, Any]]
+
+
+async def _safe(call: Any, *, submission: bool = False) -> types.CallToolResult:
+    is_error = False
     try:
-        return await call
+        payload = await call
+        is_error = submission and payload.get("ok") is False
     except BridgeError as exc:
-        return exc.as_result()
+        payload = exc.as_result()
+        is_error = True
     except Exception as exc:  # MCP tools must return a short, model-readable failure.
-        return {
+        payload = {
             "ok": False,
             "error": {"code": "bridge_internal", "message": f"Bridge failure: {type(exc).__name__}"},
             "retryable": False,
         }
+        is_error = True
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
+        structured_content=payload,
+        is_error=is_error,
+    )
 
 
 READ_ONLY = types.ToolAnnotations(
@@ -66,6 +92,12 @@ MUTATING = types.ToolAnnotations(
     idempotent_hint=False,
     open_world_hint=False,
 )
+DELEGATING = types.ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=False,
+    open_world_hint=True,
+)
 
 
 @mcp.tool(
@@ -74,14 +106,14 @@ MUTATING = types.ToolAnnotations(
     annotations=READ_ONLY,
     structured_output=True,
 )
-async def hermes_status() -> dict[str, Any]:
+async def hermes_status() -> ToolResult:
     return await _safe(get_service().status())
 
 
 @mcp.tool(
     name="hermes_chat",
     description="Start or continue a Hermes conversation; returns a durable bridge task and A2A context mapping.",
-    annotations=MUTATING,
+    annotations=DELEGATING,
     structured_output=True,
 )
 async def hermes_chat(
@@ -100,7 +132,7 @@ async def hermes_chat(
     idempotency_key: Annotated[
         str | None, Field(description="Client key used to deduplicate exactly matching submissions", max_length=256)
     ] = None,
-) -> dict[str, Any]:
+) -> ToolResult:
     return await _safe(
         get_service().chat(
             message,
@@ -112,7 +144,8 @@ async def hermes_chat(
             idempotency_key=idempotency_key,
             origin=origin,
             task_id=task_id,
-        )
+        ),
+        submission=True,
     )
 
 
@@ -127,7 +160,7 @@ async def hermes_task_get(
     refresh: Annotated[bool, Field(description="Refresh a nonterminal task from Hermes when possible")] = True,
     acknowledge_result_id: str | None = None,
     expected_origin: dict[str, str] | None = None,
-) -> dict[str, Any]:
+) -> ToolResult:
     return await _safe(
         get_service().task_get(
             task_id, refresh=refresh, acknowledge_result_id=acknowledge_result_id, expected_origin=expected_origin
@@ -145,7 +178,7 @@ async def hermes_tasks_list(
     conversation_key: Annotated[str | None, Field(description="Optional Codex conversation identifier")] = None,
     status: Annotated[str | None, Field(description="Optional bridge state such as working or completed")] = None,
     limit: Annotated[int, Field(description="Maximum tasks", ge=1, le=100)] = 20,
-) -> dict[str, Any]:
+) -> ToolResult:
     return await _safe(get_service().tasks_list(conversation_key=conversation_key, status=status, limit=limit))
 
 
@@ -158,7 +191,7 @@ async def hermes_tasks_list(
 async def hermes_task_wait(
     task_id: Annotated[str, Field(description="bridge_task_id or known A2A task id", min_length=1)],
     timeout: Annotated[float, Field(description="Maximum wait in seconds", ge=1, le=300)] = 30,
-) -> dict[str, Any]:
+) -> ToolResult:
     return await _safe(get_service().task_wait(task_id, timeout=timeout))
 
 
@@ -171,7 +204,7 @@ async def hermes_task_wait(
 async def hermes_task_cancel(
     task_id: Annotated[str, Field(description="bridge_task_id or known A2A task id", min_length=1)],
     timeout: Annotated[float, Field(description="Cancel request timeout in seconds", ge=1, le=60)] = 10,
-) -> dict[str, Any]:
+) -> ToolResult:
     return await _safe(get_service().task_cancel(task_id, timeout=timeout))
 
 
@@ -191,7 +224,7 @@ async def hermes_contexts(
     conversation_key: Annotated[str | None, Field(description="Select a mapping by Codex conversation")] = None,
     context_id: Annotated[str | None, Field(description="Select a mapping by A2A contextId")] = None,
     limit: Annotated[int, Field(description="Maximum rows/tasks", ge=1, le=100)] = 20,
-) -> dict[str, Any]:
+) -> ToolResult:
     return await _safe(
         get_service().contexts(action=action, conversation_key=conversation_key, context_id=context_id, limit=limit)
     )
