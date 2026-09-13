@@ -58,7 +58,14 @@ def main() -> int:
         subprocess.run([*arguments, "--check"], cwd=temporary, check=True)
         for name in ("codex-a2a-setup", "codex-a2a"):
             runtime = json.loads((skill_root / name / "references/runtime.json").read_text())
-            assert runtime["command"][0] == str(python)
+            runtime_python = Path(runtime["command"][0])
+            # macOS may spell the same temp root /var or /private/var. Resolve
+            # only the parent: resolving the interpreter can erase venv identity.
+            assert runtime_python.is_absolute()
+            assert (runtime_python.parent.resolve(strict=True), runtime_python.name) == (
+                python.parent.resolve(strict=True),
+                python.name,
+            )
             subprocess.run([*runtime["command"], "--version"], cwd=temporary, check=True)
 
     print(f"clean wheel install passed: {wheel.name}")
