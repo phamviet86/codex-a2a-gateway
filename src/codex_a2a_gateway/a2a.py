@@ -252,6 +252,10 @@ class A2AClient:
                         envelope = json.loads(raw)
                         if not isinstance(envelope, dict):
                             continue
+                        if method == "SendStreamingMessage" and (
+                            envelope.get("jsonrpc") != "2.0" or envelope.get("id") != body["id"]
+                        ):
+                            raise A2AError("correlation_mismatch", "stream response does not match request ID")
                         if "error" in envelope:
                             err = envelope.get("error") or {}
                             raise A2AError("a2a_rpc_error", str(err.get("message") if isinstance(err, dict) else err))
@@ -333,17 +337,19 @@ class A2AClient:
         if isinstance(update, dict):
             task = {
                 "id": update.get("taskId"),
-                "contextId": update.get("contextId") or fallback_context,
+                "contextId": update.get("contextId"),
                 "status": update.get("status") or {},
+                "metadata": update.get("metadata", {}),
             }
             return cls.parse_task(task, fallback_context=fallback_context)
         artifact = event.get("artifactUpdate")
         if isinstance(artifact, dict):
             task = {
                 "id": artifact.get("taskId"),
-                "contextId": artifact.get("contextId") or fallback_context,
+                "contextId": artifact.get("contextId"),
                 "status": {"state": "TASK_STATE_WORKING"},
                 "artifacts": [artifact.get("artifact") or {}],
+                "metadata": artifact.get("metadata", {}),
             }
             return cls.parse_task(task, fallback_context=fallback_context)
         return None

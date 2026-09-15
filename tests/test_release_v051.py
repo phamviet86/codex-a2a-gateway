@@ -16,13 +16,12 @@ import pytest
 
 
 @pytest.fixture
-def publisher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    path = Path(__file__).parents[1] / "scripts/publish_v050.py"
-    spec = importlib.util.spec_from_file_location("publish_v050", path)
+def publisher() -> ModuleType:
+    path = Path(__file__).parents[1] / "scripts/publish_v051.py"
+    spec = importlib.util.spec_from_file_location("publish_v051", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr("codex_a2a_gateway.__version__", module.VERSION)
     return module
 
 
@@ -36,7 +35,7 @@ def valid_run() -> dict[str, Any]:
         "head_branch": "main",
         "head_repository": {"full_name": "phamviet86/codex-a2a-gateway"},
         "head_sha": "a" * 40,
-        "head_commit": {"message": "Ship onboarding [release v0.5.0]"},
+        "head_commit": {"message": "Fix Hermes continuation [release v0.5.1]"},
     }
 
 
@@ -86,7 +85,7 @@ def test_publication_orders_verification_before_publish(
     event = tmp_path / "event.json"
     event.write_text(json.dumps({"workflow_run": valid_run()}))
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
-    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.5.0"\n')
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.5.1"\n')
     dist = tmp_path / "dist"
     dist.mkdir()
     for name in publisher.ASSETS:
@@ -158,20 +157,40 @@ def test_publication_orders_verification_before_publish(
             assert "release upload" not in calls
 
 
-@pytest.mark.parametrize("version", ["0.5.0", "0.4.0"])
+@pytest.mark.parametrize("version", ["0.5.1", "0.4.0"])
 def test_existing_download_checks_distribution_version(publisher: ModuleType, tmp_path: Path, version: str) -> None:
     with zipfile.ZipFile(tmp_path / publisher.ASSETS[0], "w") as wheel:
-        wheel.writestr("codex_a2a_gateway-0.5.0.dist-info/METADATA", f"Name: codex-a2a-gateway\nVersion: {version}\n")
+        wheel.writestr("codex_a2a_gateway-0.5.1.dist-info/METADATA", f"Name: codex-a2a-gateway\nVersion: {version}\n")
     with tarfile.open(tmp_path / publisher.ASSETS[1], "w:gz") as archive:
-        content = b'[project]\nname = "codex-a2a-gateway"\nversion = "0.5.0"\n'
-        info = tarfile.TarInfo("codex_a2a_gateway-0.5.0/pyproject.toml")
+        content = b'[project]\nname = "codex-a2a-gateway"\nversion = "0.5.1"\n'
+        info = tarfile.TarInfo("codex_a2a_gateway-0.5.1/pyproject.toml")
         info.size = len(content)
         archive.addfile(info, io.BytesIO(content))
     (tmp_path / "SHA256SUMS").write_text(
         "".join(f"{publisher.digest(tmp_path / name)}  {name}\n" for name in sorted(publisher.ASSETS[:2]))
     )
-    if version == "0.5.0":
+    if version == "0.5.1":
         publisher.verify_download(tmp_path)
     else:
         with pytest.raises(RuntimeError, match="wheel version mismatch"):
             publisher.verify_download(tmp_path)
+
+
+def test_release_workflow_checks_out_successful_main_push_sha() -> None:
+    root = Path(__file__).parents[1]
+    if not (root / ".git").exists() and (root / "PKG-INFO").is_file():
+        pytest.skip("release workflow is checkout-only and excluded from the sdist")
+    workflow = (root / ".github/workflows/release-v0.5.1.yml").read_text()
+    for guard in (
+        "workflow_run:",
+        "workflows: [CI]",
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.event == 'push'",
+        "github.event.workflow_run.head_branch == 'main'",
+        "github.event.workflow_run.head_repository.full_name == github.repository",
+        "contains(github.event.workflow_run.head_commit.message, '[release v0.5.1]')",
+        "ref: ${{ github.event.workflow_run.head_sha }}",
+        'test "$(git rev-parse HEAD)" = "$RELEASE_SHA"',
+        "run: python scripts/publish_v051.py",
+    ):
+        assert guard in workflow

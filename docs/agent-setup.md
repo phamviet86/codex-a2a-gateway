@@ -1,10 +1,10 @@
-# Agent-led workstation setup — v0.5.0
+# Agent-led workstation setup — v0.5.1
 
-Install the versioned `v0.5.0` release wheel without cloning. It includes `install-skills`, setup/usage guidance and direction-specific `doctor`. The earlier `v0.4.0` wheel does not include these additions. Full deployment operations are documented in [deployment.md](deployment.md).
+Install the versioned `v0.5.1` release wheel without cloning. It includes `install-skills`, setup/usage guidance and direction-specific `doctor`. The earlier `v0.4.0` wheel does not include these additions. Full deployment operations are documented in [deployment.md](deployment.md).
 
 Give the agent this request:
 
-> Install Codex A2A Gateway v0.5.0 from its release wheel into a dedicated Python 3.11 environment and install its setup and usage skills. Then use `codex-a2a-setup` to configure the requested direction on this machine. Reuse existing credentials and settings; ask only for required missing values, including the exact inbound workspace. Preserve other MCP entries and state. Verify the selected transport and client tool discovery. Do not run a live model task or enable automatic startup unless I authorize those steps.
+> Install Codex A2A Gateway v0.5.1 from its release wheel into a dedicated Python 3.11 environment and install its setup and usage skills. Then use `codex-a2a-setup` to configure the requested direction on this machine. Reuse existing credentials and settings; ask only for required missing values, including the exact inbound workspace. Preserve other MCP entries and state. Verify the selected transport and client tool discovery. Do not run a live model task or enable automatic startup unless I authorize those steps.
 
 Supply `outbound`, `inbound`, or `both` when known. Inbound also needs the workspace and intended A2A caller; generic clients do not need Hermes. Outbound needs a configured Hermes default agent and local A2A platform. Codex and Hermes retain their provider authentication; this project has no universal API key.
 
@@ -15,7 +15,7 @@ The agent runs these commands (replace `python3.11` with the selected compatible
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 

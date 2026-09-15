@@ -19,7 +19,7 @@ from .models import (
     result_receipt,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class Store:
@@ -143,6 +143,13 @@ class Store:
                 "bridge_task_id TEXT NOT NULL REFERENCES tasks(bridge_task_id), fingerprint TEXT NOT NULL, "
                 "message_id TEXT NOT NULL)"
             )
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS outbound_bindings ("
+                "bridge_task_id TEXT NOT NULL REFERENCES tasks(bridge_task_id), "
+                "message_id TEXT NOT NULL, remote_task_id TEXT NOT NULL, "
+                "provenance TEXT NOT NULL, PRIMARY KEY(bridge_task_id,message_id))"
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_outbound_binding_remote ON outbound_bindings(remote_task_id)")
             con.execute(
                 "CREATE TABLE IF NOT EXISTS result_receipts (result_id TEXT PRIMARY KEY, "
                 "bridge_task_id TEXT NOT NULL REFERENCES tasks(bridge_task_id), acknowledged_at TEXT NOT NULL)"
@@ -406,6 +413,11 @@ class Store:
             current = self._task(con.execute("SELECT * FROM tasks WHERE bridge_task_id=?", (task_id,)).fetchone())
             if not current or current.state != "input_required":
                 raise BridgeError("invalid_task_state", "continuation requires input-required")
+            if current.a2a_task_id:
+                con.execute(
+                    "INSERT OR IGNORE INTO outbound_bindings VALUES(?,?,?,?)",
+                    (task_id, current.message_id, current.a2a_task_id, "legacy"),
+                )
             for key, fingerprint, message_id in (
                 (current.idempotency_key, current.request_fingerprint, current.message_id),
                 (attempt.idempotency_key, attempt.request_fingerprint, attempt.message_id),
@@ -424,6 +436,20 @@ class Store:
         result = self.get_task(task_id)
         assert result is not None
         return result
+
+    def outbound_bindings(self, bridge_task_id: str) -> list[dict[str, str]]:
+        with self._lock, self._connect() as con:
+            return [
+                dict(row)
+                for row in con.execute("SELECT * FROM outbound_bindings WHERE bridge_task_id=?", (bridge_task_id,))
+            ]
+
+    def remote_binding_owner(self, remote_task_id: str) -> str | None:
+        with self._lock, self._connect() as con:
+            row = con.execute(
+                "SELECT bridge_task_id FROM outbound_bindings WHERE remote_task_id=? LIMIT 1", (remote_task_id,)
+            ).fetchone()
+        return str(row[0]) if row else None
 
     def get_inbound_message(self, message_id: str) -> dict[str, str] | None:
         with self._lock, self._connect() as con:
@@ -632,6 +658,8 @@ class Store:
         execution_metadata: dict[str, Any] | None = None,
         message_id: str | None = None,
         clear_codex_turn_id: bool = False,
+        expected_message_id: str | None = None,
+        binding_provenance: str | None = None,
     ) -> TaskRecord:
         current = self.get_task(bridge_task_id)
         if not current:
@@ -669,6 +697,32 @@ class Store:
             ),
         }
         with self._lock, self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            if expected_message_id is not None:
+                saved = con.execute("SELECT message_id FROM tasks WHERE bridge_task_id=?", (bridge_task_id,)).fetchone()
+                if not saved or saved[0] != expected_message_id:
+                    raise BridgeError("correlation_mismatch", "result belongs to a stale attempt")
+            if binding_provenance and a2a_task_id:
+                occupied = con.execute(
+                    "SELECT bridge_task_id FROM outbound_bindings WHERE remote_task_id=? AND bridge_task_id!=?",
+                    (a2a_task_id, bridge_task_id),
+                ).fetchone()
+                binding = con.execute(
+                    "SELECT remote_task_id FROM outbound_bindings WHERE bridge_task_id=? AND message_id=?",
+                    (bridge_task_id, current.message_id),
+                ).fetchone()
+                if occupied or (binding and binding[0] != a2a_task_id):
+                    raise BridgeError("correlation_mismatch", "remote binding conflicts with saved lineage")
+                if current.a2a_task_id and current.a2a_task_id != a2a_task_id:
+                    # Empty message identity reserves a migrated predecessor; it is not an ACK.
+                    con.execute(
+                        "INSERT OR IGNORE INTO outbound_bindings VALUES(?,?,?,?)",
+                        (bridge_task_id, "", current.a2a_task_id, "legacy"),
+                    )
+                con.execute(
+                    "INSERT OR IGNORE INTO outbound_bindings VALUES(?,?,?,?)",
+                    (bridge_task_id, current.message_id, a2a_task_id, binding_provenance),
+                )
             con.execute(
                 """
                 UPDATE tasks SET state=:state,a2a_task_id=:a2a_task_id,result_text=:result_text,

@@ -52,7 +52,11 @@ class ConversationRecovery:
         user_ids: set[str] = set()
         for record in records:
             task_id = str(record.get("task_id") or "")
-            if not task_id or task_id in assigned_task_ids or (task.a2a_task_id and task_id != task.a2a_task_id):
+            if (
+                not task_id
+                or task_id in assigned_task_ids
+                or (task.attempt_number == 1 and task.a2a_task_id and task_id != task.a2a_task_id)
+            ):
                 continue
             raw_timestamp = record.get("ts")
             try:
@@ -67,6 +71,8 @@ class ConversationRecovery:
             ):
                 user_ids.add(task_id)
             elif role == "agent" and isinstance(record.get("text"), str):
+                if task.attempt_number > 1 and record.get("requestMessageId") != task.message_id:
+                    continue
                 raw_state = str(record.get("task_state") or "")
                 state = A2A_STATE_MAP.get(raw_state, raw_state)
                 if state in TURN_END_STATES:
@@ -81,5 +87,5 @@ class ConversationRecovery:
             context_id=task.context_id,
             state=state,
             text=text,
-            raw={"metadata": {"requestMessageId": task.message_id}},
+            raw={"contextId": task.context_id, "metadata": {"requestMessageId": task.message_id}},
         )

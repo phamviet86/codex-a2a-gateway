@@ -37,7 +37,7 @@ def test_install_is_idempotent_and_preserves_unrelated_files(tmp_path: Path) -> 
     completed = subprocess.run(
         [*runtime["command"], "--version"], cwd=tmp_path, capture_output=True, text=True, check=True
     )
-    assert "0.5.0" in completed.stdout
+    assert "0.5.1" in completed.stdout
 
 
 @pytest.mark.parametrize("flags", [{"check": True}, {"dry_run": True}])

@@ -1,6 +1,6 @@
-# Durable jobs and return delivery (v0.4.0)
+# Durable jobs and return delivery (v0.5.1)
 
-This v0.4.0 contract supersedes the v0.3.0 recovery descriptions. Fake-peer and
+This v0.5.1 contract extends v0.4.0 and supersedes the v0.3.0 recovery descriptions. Fake-peer and
 isolated live VPS evidence are recorded in [release validation](testing-report-v0.4.0.md).
 That evidence does not claim a production deployment.
 
@@ -57,20 +57,38 @@ to repeat a mutation. Configured backend/stream execution deadlines are separate
 from caller waits. A backend deadline may terminate the local subprocess; the
 side-effect outcome can still be unknown.
 
-Outbound restart converts interrupted queued/submitted/working jobs to unknown.
-No prompt is replayed automatically. A known A2A task ID is read directly. If it is
-missing at the peer, the saved binding remains and the result is unknown. Recovery
-without an ACK requires matching context **and** `metadata.requestMessageId` equal
-to the saved outbound message ID. All returned pages are checked (bounded at 100
-pages); duplicate candidates, repeated cursors or an incomplete scan do not establish
-uniqueness. A task already bound to another job is never reassigned. A sole task in
-a context, similar prompt, nearby timestamp or shared conversation is insufficient.
+Outbound continuation keeps `bridge_task_id`, origin and context stable. Conforming
+A2A peers retain the supplied remote `taskId`. Hermes 0.21.2 instead creates a new
+task: this is a compatibility path, not a new A2A conformance claim. The current
+submission stream may bind one new ID from a Task snapshot with an explicit matching
+context, an exactly matching JSON-RPC response ID, and no conflicting
+`metadata.requestMessageId`. Status/artifact events cannot establish a replacement
+ID. IDs occupied by another job or an older attempt are rejected. Binding and result
+are committed atomically; later events cannot rebind the attempt. Late workers and
+read responses must still belong to the saved current message identity.
 
-The local Hermes JSONL fallback also requires the user record's exact `message_id`
-(or `messageId`) and an agent record's explicit `task_state`. Legacy records with
-only time/role/text/task ID cannot provide this guarantee. Unmodified peers lacking
-these fields may remain unknown after losing an ACK or their in-memory task. This
-change does not patch or restart Hermes to manufacture peer support.
+Outbound restart converts interrupted queued/submitted/working jobs to unknown.
+No prompt is replayed automatically. Schema 6 adds per-message remote bindings and
+retains predecessor lineage without changing historical records. A uniquely bound
+current-attempt ID can be read after an acknowledged snapshot without message
+metadata. An ID reused across attempts still requires the current exact
+`metadata.requestMessageId` on retrieval; a stale predecessor cannot complete the
+new request. Migration never manufactures ACK provenance for old unresolved jobs.
+
+Get/wait attempt exact recovery even when the predecessor ID remains retrievable.
+Without an ACK, recovery requires matching context **and** `metadata.requestMessageId`
+equal to the saved outbound message ID. All returned pages are checked (bounded at
+100 pages); multiple candidates, repeated cursors or an incomplete scan do not
+establish uniqueness. An existing binding cannot change during recovery. A sole task
+in a context, similar prompt, nearby timestamp or shared conversation is insufficient.
+
+The local Hermes JSONL fallback requires the user record's exact `message_id`
+(or `messageId`) and an agent record's explicit `task_state`. For continuations the
+agent record must also carry `requestMessageId` for that exact current user message;
+joining an old user and a newer result solely by reused task ID is insufficient.
+Unmodified Hermes lacks this extended persistence evidence and may remain unknown
+after losing an ACK or its in-memory task. This change does not patch or restart
+Hermes to manufacture peer support.
 
 Inbound persistence commits each message and job before scheduling its worker.
 Tasks that entered the backend become unknown after restart. `GetTask` and inbound

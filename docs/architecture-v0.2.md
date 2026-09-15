@@ -25,6 +25,16 @@ Transport chỉ parse/format A2A. `InboundService` sở hữu lifecycle, lock v�
 
 Sau restart, task đã vào backend giữ `outcome_unknown` với mã `gateway_restarted`; context/thread/turn mapping vẫn giữ để đọc kết quả chính xác nếu có. Task còn `queued` được đánh dấu `gateway_restarted_before_start`, rồi chỉ requeue khi client replay đúng original `messageId`, vì prompt không được persist.
 
+## Outbound compatibility update (v0.5.1)
+
+`outbound_bindings` records the remote ID and provenance per outbound message.
+`tasks.a2a_task_id` remains the current routing handle; earlier bindings reserve
+predecessor IDs. A migrated predecessor may have an empty message identity with
+`legacy` provenance: this reserves ownership and never proves acknowledgement.
+Binding and result updates share a transaction. Only a current direct Task snapshot
+with exact transport correlation can introduce a metadata-free replacement ID;
+recovery requires exact message evidence. See [durable jobs](durable-jobs.md).
+
 ## App Server protocol
 
 Adapter dùng schema sinh từ binary hiện hành bằng:

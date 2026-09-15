@@ -11,7 +11,6 @@ from .a2a import A2AClient
 from .models import (
     TERMINAL_STATES,
     TURN_END_STATES,
-    A2AError,
     A2ATaskResult,
     BridgeError,
     TaskRecord,
@@ -95,41 +94,71 @@ class BridgeService:
         if event:
             event.set()
 
-    def _apply_remote(self, bridge_task_id: str, result: A2ATaskResult, *, from_submission: bool = False) -> TaskRecord:
+    def _apply_remote(
+        self,
+        bridge_task_id: str,
+        result: A2ATaskResult,
+        *,
+        submission_message_id: str | None = None,
+        exact_recovery: bool = False,
+        submission_snapshot: bool = False,
+        expected_message_id: str | None = None,
+    ) -> TaskRecord:
         current = self.store.get_task(bridge_task_id)
         if not current:
             raise BridgeError("task_not_found", "bridge task not found")
-        if (result.context_id and result.context_id != current.context_id) or (
-            current.a2a_task_id and result.task_id != current.a2a_task_id
-        ):
+        expected = submission_message_id or expected_message_id
+        if expected is not None and expected != current.message_id:
+            raise BridgeError("correlation_mismatch", "result belongs to a stale attempt")
+        direct = submission_message_id == current.message_id
+        if result.context_id and result.context_id != current.context_id:
             raise BridgeError("correlation_mismatch", "remote result does not match the saved task/context")
-        metadata = result.raw.get("metadata") or {}
+        metadata = result.raw.get("metadata", {})
         if not isinstance(metadata, dict):
             raise BridgeError("correlation_mismatch", "remote metadata is invalid")
-        if metadata.get("requestMessageId") and metadata["requestMessageId"] != current.message_id:
+        if "requestMessageId" in metadata and metadata["requestMessageId"] != current.message_id:
             raise BridgeError("correlation_mismatch", "remote result belongs to a different request")
-        if (
-            current.attempt_number > 1
-            and not from_submission
-            and metadata.get("requestMessageId") != current.message_id
+        exact = metadata.get("requestMessageId") == current.message_id
+        lineage = self.store.outbound_bindings(bridge_task_id)
+        binding = next((item for item in lineage if item["message_id"] == current.message_id), None)
+        prior_ids = {item["remote_task_id"] for item in lineage if item["message_id"] != current.message_id}
+        changed_id = bool(current.a2a_task_id and result.task_id != current.a2a_task_id)
+        if binding and result.task_id != binding["remote_task_id"]:
+            raise BridgeError("correlation_mismatch", "remote result does not match the saved task/context")
+        if changed_id and (
+            binding
+            or current.attempt_number <= 1
+            or not ((direct and submission_snapshot) or (exact_recovery and exact))
+            or not result.task_id
+            or result.raw.get("contextId") != current.context_id
+            or result.task_id in prior_ids
         ):
+            raise BridgeError("correlation_mismatch", "remote result does not match the saved task/context")
+        unique_binding = bool(
+            binding and binding["provenance"] in {"submission", "exact_message"} and result.task_id not in prior_ids
+        )
+        if current.attempt_number > 1 and not (direct or exact or unique_binding):
             raise BridgeError("correlation_mismatch", "continuation retrieval requires exact requestMessageId")
-        if current.state in TERMINAL_STATES:
-            return current
         if result.task_id:
             bound = self.store.get_task(result.task_id)
-            if bound and bound.bridge_task_id != current.bridge_task_id:
+            owner = self.store.remote_binding_owner(result.task_id)
+            if (bound and bound.bridge_task_id != bridge_task_id) or (owner and owner != bridge_task_id):
                 raise BridgeError("correlation_mismatch", "remote task is already bound to another request")
-        text = result.text or current.result_text
-        artifacts = result.artifacts or current.artifacts
+        if current.state in TERMINAL_STATES:
+            return current
+        provenance = "submission" if direct else "exact_message" if exact else None
+        if not binding and current.attempt_number > 1 and result.task_id == current.a2a_task_id:
+            provenance = "reused" if provenance else None
         updated = self.store.update_task(
             bridge_task_id,
             state=result.state,
             a2a_task_id=result.task_id or None,
-            result_text=text,
-            artifacts=artifacts,
+            result_text=result.text or current.result_text,
+            artifacts=result.artifacts or current.artifacts,
             error_code="",
             error_message="",
+            expected_message_id=current.message_id,
+            binding_provenance=provenance,
         )
         self._signal(bridge_task_id)
         return updated
@@ -303,7 +332,8 @@ class BridgeService:
         self._workers[task.bridge_task_id] = worker
 
         def drop_worker(_done: asyncio.Task[None], key: str = task.bridge_task_id) -> None:
-            self._workers.pop(key, None)
+            if self._workers.get(key) is _done:
+                self._workers.pop(key, None)
 
         worker.add_done_callback(drop_worker)
 
@@ -330,7 +360,9 @@ class BridgeService:
             lock = self._context_locks.setdefault(task.context_id, asyncio.Lock())
             async with lock, self._semaphore:
                 await self.client.discover()
-                self.store.update_task(bridge_task_id, state=TaskState.SUBMITTED.value)
+                self.store.update_task(
+                    bridge_task_id, state=TaskState.SUBMITTED.value, expected_message_id=task.message_id
+                )
                 kwargs: dict[str, Any] = {"timeout": timeout}
                 if task.origin:
                     kwargs["origin"] = task.origin
@@ -339,11 +371,16 @@ class BridgeService:
                 async for event in self.client.stream_message(message, task.context_id, task.message_id, **kwargs):
                     parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
                     if parsed:
-                        self._apply_remote(bridge_task_id, parsed, from_submission=True)
+                        self._apply_remote(
+                            bridge_task_id,
+                            parsed,
+                            submission_message_id=task.message_id,
+                            submission_snapshot=isinstance(event.get("task"), dict),
+                        )
                         if parsed.state in TURN_END_STATES:
                             break
                 current = self.store.get_task(bridge_task_id)
-                if current and current.state not in TURN_END_STATES:
+                if current and current.message_id == task.message_id and current.state not in TURN_END_STATES:
                     self._apply_error(
                         bridge_task_id, BridgeError("a2a_transport_ambiguous", "stream ended before a turn result")
                     )
@@ -351,11 +388,11 @@ class BridgeService:
             raise
         except BridgeError as exc:
             current = self.store.get_task(bridge_task_id)
-            if current and current.state not in TERMINAL_STATES:
+            if current and current.message_id == task.message_id and current.state not in TERMINAL_STATES:
                 self._apply_error(bridge_task_id, exc)
         except Exception as exc:
             current = self.store.get_task(bridge_task_id)
-            if current and current.state not in TERMINAL_STATES:
+            if current and current.message_id == task.message_id and current.state not in TERMINAL_STATES:
                 self._apply_error(
                     bridge_task_id,
                     BridgeError("bridge_internal", f"stream worker failed: {type(exc).__name__}"),
@@ -386,7 +423,6 @@ class BridgeService:
                         parsed.context_id == task.context_id
                         and parsed.task_id
                         and metadata.get("requestMessageId") == task.message_id
-                        and (not task.a2a_task_id or task.a2a_task_id == parsed.task_id)
                     ):
                         candidates[parsed.task_id] = parsed
                 page_token = str(listed.get("nextPageToken") or "")
@@ -398,14 +434,21 @@ class BridgeService:
             else:
                 return task, None
             if len(candidates) == 1:
-                recovered = self._apply_remote(task.bridge_task_id, next(iter(candidates.values())))
+                recovered = self._apply_remote(
+                    task.bridge_task_id,
+                    next(iter(candidates.values())),
+                    exact_recovery=True,
+                    expected_message_id=task.message_id,
+                )
                 return recovered, "a2a_list_exact_message"
         except BridgeError:
             pass
         recovered_result = self.conversation_recovery.recover(task, assigned_task_ids=set(), unresolved_count=1)
         if recovered_result:
             try:
-                return self._apply_remote(task.bridge_task_id, recovered_result), "conversation_store"
+                return self._apply_remote(
+                    task.bridge_task_id, recovered_result, exact_recovery=True, expected_message_id=task.message_id
+                ), "conversation_store"
             except BridgeError:
                 pass
         return task, None
@@ -426,16 +469,26 @@ class BridgeService:
         if acknowledge_result_id:
             self.store.acknowledge_result(task, acknowledge_result_id)
         recovery_strategy: str | None = None
-        if refresh and task.state == TaskState.OUTCOME_UNKNOWN.value and not task.a2a_task_id:
+        if refresh and task.state == TaskState.OUTCOME_UNKNOWN.value:
             task, recovery_strategy = await self._recover_unknown(task)
         if refresh and task.a2a_task_id and task.state not in TERMINAL_STATES:
             try:
-                task = self._apply_remote(task.bridge_task_id, await self.client.get_task(task.a2a_task_id))
+                task = self._apply_remote(
+                    task.bridge_task_id,
+                    await self.client.get_task(task.a2a_task_id),
+                    expected_message_id=task.message_id,
+                )
             except BridgeError as exc:
+                latest = self.store.get_task(task.bridge_task_id)
+                if latest and latest.message_id != task.message_id:
+                    return {**self._task_result(latest), "refresh_warning": "ignored response for a stale attempt"}
                 if exc.code != "a2a_task_not_found":
                     return {**self._task_result(task), "refresh_warning": exc.message}
                 task = self.store.update_task(
-                    task.bridge_task_id, state="outcome_unknown", error_code="a2a_task_not_found"
+                    task.bridge_task_id,
+                    state="outcome_unknown",
+                    error_code="a2a_task_not_found",
+                    expected_message_id=task.message_id,
                 )
                 task, recovery_strategy = await self._recover_unknown(task)
         result = self._task_result(task, events=self.store.list_events(task.bridge_task_id, 20))
@@ -494,7 +547,7 @@ class BridgeService:
 
         strategy = "poll"
         deadline = asyncio.get_running_loop().time() + timeout
-        if task.state == TaskState.OUTCOME_UNKNOWN.value and not task.a2a_task_id:
+        if task.state == TaskState.OUTCOME_UNKNOWN.value:
             strategy = "correlation_recovery"
             while asyncio.get_running_loop().time() < deadline:
                 task, recovered_by = await self._recover_unknown(task)
@@ -512,24 +565,41 @@ class BridgeService:
                 await asyncio.sleep(min(1.0, max(0.05, deadline - asyncio.get_running_loop().time())))
         a2a_task_id = task.a2a_task_id
         if a2a_task_id:
-            try:
-                strategy = "subscribe"
-                remaining = max(0.05, deadline - asyncio.get_running_loop().time())
-                async for event in self.client.subscribe_task(a2a_task_id, timeout=remaining):
-                    parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
-                    if parsed:
-                        task = self._apply_remote(task.bridge_task_id, parsed)
-                        if task.state in TURN_END_STATES:
-                            return {**self._task_result(task), "wait_strategy": strategy}
-            except A2AError:
-                strategy = "poll_fallback"
+            if task.state != TaskState.OUTCOME_UNKNOWN.value:
+                try:
+                    strategy = "subscribe"
+                    remaining = max(0.05, deadline - asyncio.get_running_loop().time())
+                    async for event in self.client.subscribe_task(a2a_task_id, timeout=remaining):
+                        parsed = self.client.parse_stream_event(event, fallback_context=task.context_id)
+                        if parsed:
+                            task = self._apply_remote(task.bridge_task_id, parsed, expected_message_id=task.message_id)
+                            if task.state in TURN_END_STATES:
+                                return {**self._task_result(task), "wait_strategy": strategy}
+                except BridgeError:
+                    strategy = "poll_fallback"
 
             while asyncio.get_running_loop().time() < deadline:
-                try:
-                    task = self._apply_remote(task.bridge_task_id, await self.client.get_task(a2a_task_id))
-                except A2AError as exc:
-                    if exc.code == "a2a_task_not_found":
+                if task.state == TaskState.OUTCOME_UNKNOWN.value:
+                    task, recovered_by = await self._recover_unknown(task)
+                    if recovered_by:
+                        strategy = recovered_by
+                    if task.state in TURN_END_STATES:
                         break
+                    a2a_task_id = task.a2a_task_id or a2a_task_id
+                try:
+                    task = self._apply_remote(
+                        task.bridge_task_id,
+                        await self.client.get_task(a2a_task_id),
+                        expected_message_id=task.message_id,
+                    )
+                except BridgeError as exc:
+                    if exc.code == "a2a_task_not_found":
+                        task = self.store.update_task(
+                            task.bridge_task_id,
+                            state="outcome_unknown",
+                            error_code=exc.code,
+                            expected_message_id=task.message_id,
+                        )
                 if task.state in TURN_END_STATES:
                     break
                 await asyncio.sleep(min(0.5, max(0.05, deadline - asyncio.get_running_loop().time())))
@@ -556,7 +626,7 @@ class BridgeService:
             }
         try:
             remote = await self.client.cancel_task(task.a2a_task_id, timeout=timeout)
-            task = self._apply_remote(task.bridge_task_id, remote)
+            task = self._apply_remote(task.bridge_task_id, remote, expected_message_id=task.message_id)
             cancel_sent = True
         except BridgeError as exc:
             task = self.store.get_task(task.bridge_task_id) or task

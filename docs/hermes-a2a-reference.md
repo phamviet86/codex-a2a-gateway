@@ -316,3 +316,13 @@ Conversation ghi `~/.hermes/a2a_conversations/<safe-context>.jsonl`, gồm times
 - [NousResearch/hermes-agent – A2A plugin](https://github.com/NousResearch/hermes-agent/tree/main/plugins/platforms/a2a)
 - [A2A protocol specification](https://a2a-protocol.org/latest/specification/)
 - Source local `0.20.5`: `plugins/platforms/a2a/{README.md,DESIGN.md,adapter.py,protocol.py,security.py,tools.py,plugin.yaml}` tại commit nêu ở đầu tài liệu.
+
+## 2026-09-15 compatibility update (gateway v0.5.1)
+
+Hermes 0.21.2/upstream 5eb99eb2 was reported to create a new task ID for a
+continuation carrying the predecessor `taskId`, preserving context. Gateway v0.5.1
+accepts a new ID only through the current direct Task snapshot with exact transport
+correlation, or exact current-message recovery evidence. This is a Hermes
+compatibility exception; normative A2A continuation retains the supplied task ID.
+See [durable jobs](durable-jobs.md) for binding, restart and unknown-outcome limits.
+Local deterministic tests do not establish live receiver or deployment success.

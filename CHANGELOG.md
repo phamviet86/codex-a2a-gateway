@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-09-15
+
+- Support Hermes rotating outbound continuation task IDs through one current-request Task snapshot with matching JSON-RPC response ID and explicit context; preserve stable bridge handles, origins, attempt idempotency and receipts.
+- Atomically persist per-attempt remote bindings and lineage (additive schema 6). Freeze bindings, reject stale workers and conflicting IDs/metadata, and require exact message attribution when a remote ID is reused across attempts.
+- Make exact recovery reachable even while a predecessor remains retrievable. Missing ACK/provenance stays unknown; never resend automatically. Continuation transcript results require exact agent request attribution.
+- Prepare v0.5.1 publication from the exact successful main/push CI SHA, preserving historical release artifacts.
+
 ## 0.5.0 — 2026-09-13
 
 - Package agent-led workstation setup and usage skills with an idempotent `install-skills` CLI, read-only checks/plans, managed replacement and an absolute nonsecret runtime reference.
