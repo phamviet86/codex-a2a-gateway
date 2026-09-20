@@ -11,6 +11,10 @@ import base64
 import hashlib
 import json
 import os
+import signal
+import socket
+import sys
+import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -925,3 +929,103 @@ async def test_peer_binary_append_chunks_preserve_exact_bytes() -> None:
         assert len(parts) == 1 and base64.b64decode(parts[0]["raw"]) == b"\x00first\xfflast"
     finally:
         await peer.close()
+
+
+async def test_sigterm_with_open_sse_exits_bounded_and_releases_dispatcher_lock(
+    broker_settings: BrokerSettings,
+) -> None:
+    # Run the real production run_broker()/Uvicorn entry, replacing only Hermes
+    # with a harmless peer that holds an active stream until process shutdown.
+    script = """
+import asyncio
+import codex_a2a_gateway.broker as broker
+from codex_a2a_gateway.models import A2ATaskResult
+class HeldPeer:
+    async def submit(self, claim, timeout):
+        yield A2ATaskResult(task_id="held-shutdown-task", context_id="synthetic",
+                           state="working", text="")
+        await asyncio.Event().wait()
+    async def get(self, handle):
+        raise RuntimeError("no GET while the initial stream is active")
+    async def cancel(self, handle):
+        raise RuntimeError("no cancellation requested")
+    async def close(self):
+        pass
+broker.HermesBrokerPeer = lambda **kwargs: HeldPeer()
+broker.run_broker()
+"""
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        port = reserved.getsockname()[1]
+    origin = f"http://127.0.0.1:{port}"
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("CODEX_A2A_GATEWAY_BROKER_")}
+    prefix = "CODEX_A2A_GATEWAY_BROKER_"
+    environment.update(
+        {
+            prefix + key: value
+            for key, value in {
+                "DATABASE_URL": broker_settings.database_url,
+                "DEVICE_TOKENS": json.dumps(broker_settings.device_tokens),
+                "ENCRYPTION_KEY": broker_settings.encryption_key,
+                "PUBLIC_URL": origin,
+                "HOST": "127.0.0.1",
+                "PORT": str(port),
+                "ALLOW_LOOPBACK_HTTP": "true",
+                "POLL_SECONDS": "0.05",
+            }.items()
+        }
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        script,
+        env=environment,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    request = command()
+    try:
+        async with httpx.AsyncClient(
+            base_url=origin, timeout=2, headers={"Authorization": f"Bearer {TOKEN_A}"}
+        ) as client:
+            async with asyncio.timeout(5):
+                while True:
+                    try:
+                        if (await client.get("/healthz")).status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    await asyncio.sleep(0.02)
+            assert (await client.post("/v1/operations", json=request)).status_code == 202
+            async with asyncio.timeout(3):
+                while True:
+                    snapshot = (await client.get(f"/v1/operations/{request['operation_id']}")).json()
+                    if snapshot["remote_task_id"] == "held-shutdown-task":
+                        break
+                    await asyncio.sleep(0.02)
+            assert snapshot["state"] == "running"
+            async with client.stream("GET", "/v1/events", timeout=None) as events:
+                assert events.status_code == 200
+                lines = events.aiter_lines()
+                assert (await anext(lines)).startswith("id:")
+                started = time.monotonic()
+                process.send_signal(signal.SIGTERM)
+                # The client deliberately remains connected until the server exits.
+                await asyncio.wait_for(process.wait(), timeout=9)
+                assert time.monotonic() - started < 9
+                assert process.returncode in (0, -signal.SIGTERM)
+        reopened = BrokerStore(broker_settings)
+        try:
+            reopened.acquire_dispatcher()  # Proves the old process released its advisory lock.
+            final = reopened.get("a", request["operation_id"])
+            assert final["state"] == "outcome_unknown"
+            assert final["remote_task_id"] == "held-shutdown-task"
+            assert reopened.claim() is None
+        finally:
+            reopened.close()
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        if process.stderr is not None:
+            await process.stderr.read()

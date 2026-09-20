@@ -189,7 +189,9 @@ long jobs; it is separate from the short MCP inline wait. This Hermes runtime ma
 stop execution when its stream disconnects, including broker shutdown or deadline
 expiry. Persisted handles support exact result reconciliation, not a guarantee
 that computation survives a lost connection. Never replay work to conceal that
-failure. Keep active streams drained through terminal status.
+failure. Prefer an idle maintenance window for upgrades. Broker shutdown bounds
+HTTP/SSE graceful draining to five seconds before cancelling connections and
+releasing its dispatcher; this bounds shutdown, not upstream cancellation.
 `CODEX_A2A_GATEWAY_BROKER_MAX_CONCURRENT_STREAMS` defaults to four (range 1–32).
 Independent flows may execute concurrently; one flow remains serialized. Reads
 and best-effort cancellation have their own bounded work slots so a quiet

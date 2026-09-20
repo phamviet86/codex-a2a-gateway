@@ -532,6 +532,8 @@ def run_broker() -> None:
         port=settings.port,
         workers=1,
         access_log=False,
+        # Persistent event subscribers must not indefinitely delay lifespan cleanup.
+        timeout_graceful_shutdown=5,
         proxy_headers=True,
         forwarded_allow_ips="127.0.0.1,::1",
     )
