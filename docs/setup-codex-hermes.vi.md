@@ -1,5 +1,7 @@
 # Thiết lập Codex + Hermes hai chiều (macOS/Linux)
 
+> **Cài server và client trên hai máy với v0.6:** bắt đầu từ [server cho Hermes](server-hermes.vi.md), rồi [client cho Codex Desktop](client-codex.vi.md). Hướng dẫn bên dưới dành cho chế độ local v0.5.1 được giữ lại, không cấu hình broker/client mới.
+
 > Bản v0.5.1 có quy trình [cài và cấu hình bằng agent](agent-setup.md), với skills setup/sử dụng và `doctor --mode`. Agent thực hiện cấu hình, chỉ hỏi dữ liệu bắt buộc còn thiếu.
 
 > Hợp đồng recovery/delivery mới: [job bền vững](durable-jobs.vi.md). Hết lượt wait không phải thất bại; không tự đưa kết quả vào Desktop conversation.

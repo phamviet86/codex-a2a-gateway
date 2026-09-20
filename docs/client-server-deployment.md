@@ -1,5 +1,7 @@
 # Deploy the v0.6 client/server beta
 
+> Step-by-step Vietnamese guides: [server installation and Hermes usage](server-hermes.vi.md) → [client installation and Codex usage](client-codex.vi.md). This page remains the shared release-installation and operations reference.
+
 This opt-in profile connects a Desktop workstation to one private server running
 Hermes. It adds `broker`, `client`, `client-mcp`, and `client-doctor` to the existing
 distribution. Existing `serve`, `gateway`, seven `hermes_*` tools, inbound Agent
@@ -27,9 +29,16 @@ Prerequisites: CPython 3.11 with venv; PostgreSQL 16 on the server; an existing
 authenticated Hermes installation with A2A on loopback; and Codex Desktop/CLI
 on the workstation. Keep server and client state separate from the legacy release.
 
-Download the wheel and checksums from the versioned GitHub release, without a clone:
+For a new installation, download the wheel and checksums from the versioned GitHub release, without a clone. The subshell stops on any failed download or checksum. If the venv already exists, verify its version and use the upgrade procedure instead of overwriting a running installation:
 
 ```bash
+(
+set -eu
+gateway_v06="$HOME/.local/share/codex-a2a-v06/venv"
+if [ -e "$gateway_v06" ]; then
+  echo "Existing venv: inspect the installed version and follow Upgrade and rollback." >&2
+  exit 1
+fi
 release_dir=$(mktemp -d)
 release_url=https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.6.0b1
 wheel=codex_a2a_gateway-0.6.0b1-py3-none-any.whl
@@ -42,10 +51,10 @@ if command -v shasum >/dev/null 2>&1; then
 else
   (cd "$release_dir" && sha256sum --check SHA256SUMS)
 fi
-gateway_v06="$HOME/.local/share/codex-a2a-v06/venv"
 python3.11 -m venv "$gateway_v06"
 "$gateway_v06/bin/python" -m pip install "$release_dir/$wheel"
 "$gateway_v06/bin/codex-a2a-gateway" --version
+)
 ```
 
 Stop if checksum verification fails. Keep the verified wheel for rollback and

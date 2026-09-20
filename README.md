@@ -15,7 +15,8 @@ Hermes A2A Gateway connects Hermes with AI agents through durable A2A workflows.
 
 The repository is now `hermes-a2a-gateway`. For installation compatibility, the Python distribution and command remain `codex-a2a-gateway`, the namespace remains `codex_a2a_gateway`, and existing environment variables, MCP registrations and state paths stay unchanged.
 
-- **Codex → A2A:** Codex calls seven MCP stdio tools that delegate to the local Hermes A2A peer.
+- **Remote client/server beta:** five `gateway_*` MCP tools send work from Codex Desktop to Hermes on a private server and retrieve durable results.
+- **Legacy local Codex → A2A:** seven `hermes_*` MCP tools delegate to a Hermes A2A peer on the same host.
 - **A2A → Codex:** Hermes or another A2A v1.0 client calls an HTTP/SSE gateway backed by Codex App Server.
 
 The existing inbound endpoint uses portable A2A v1.0 operations and can be called by other compliant clients. This repository rename does not add native integrations for additional agents.
@@ -38,9 +39,22 @@ Legacy: MCP serve --> local Hermes; inbound gateway --> Codex App Server
 
 The new client and broker use separate stores from the legacy gateway. The client binds an operation to trusted native MCP metadata; the broker authenticates a device token. A result received after the inline wait may enqueue a reference in the original Desktop task. Unknown queue acknowledgements remain explicit and are never blindly retried.
 
-Start with the [client/server deployment guide](docs/client-server-deployment.md) for the new topology. The quickstarts below cover retained local modes.
+## Set up a Hermes server and a Codex client
 
-## Current capabilities
+Follow these Vietnamese guides in order; both machines install the same pinned release wheel without cloning the repo:
+
+| Machine | Guide | What it covers |
+| --- | --- | --- |
+| Server / VPS running Hermes | [Install and use the server](docs/server-hermes.vi.md) | Hermes A2A, PostgreSQL, broker, private TLS/SSE, device credentials and operations |
+| Workstation running Codex | [Install and use the client](docs/client-codex.vi.md) | Local daemon, automatic startup, Desktop MCP, submitting work, retrieving results and troubleshooting |
+
+The server hands the client its HTTPS origin, a device token and the CA certificate when needed. The broker encryption key stays on the server. See the [shared deployment reference](docs/client-server-deployment.md) for the verified release download, retention and rollback.
+
+The quickstarts and setup skill below cover retained **local** modes. They do not install the new broker/client profile. The broker returns Hermes results to their originating Codex task; independent Hermes → Codex jobs use the separate inbound gateway described below.
+
+## Local-mode capabilities
+
+The list below describes the retained local gateway. For the new remote profile, use the five `gateway_*` tools in the [client guide](docs/client-codex.vi.md#6-sử-dụng-hằng-ngày).
 
 - A2A v1 Agent Card and JSON-RPC `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, and `CancelTask`.
 - SSE lifecycle streaming with task, status, and artifact updates.
@@ -75,7 +89,7 @@ The release wheel and clean-install path are tested in CI on macOS and Linux. Wi
 
 The App Server backend follows the official [Codex App Server protocol](https://learn.chatgpt.com/docs/app-server): initialize once, start or resume a thread, start a turn, and consume streamed notifications. WebSocket App Server transport is not used by this project.
 
-## Install with your agent
+## Install local modes with your agent
 
 Give your agent this request:
 
@@ -297,7 +311,9 @@ The gateway uses the old state file automatically when it exists and the new def
 ## Documentation
 
 - [Vietnamese README](README.vi.md)
-- [Vietnamese Codex + Hermes setup](docs/setup-codex-hermes.vi.md)
+- [Hermes server installation and usage (Vietnamese)](docs/server-hermes.vi.md)
+- [Codex client installation and usage (Vietnamese)](docs/client-codex.vi.md)
+- [Vietnamese local Codex + Hermes setup](docs/setup-codex-hermes.vi.md)
 - [Vietnamese roadmap and feasibility](docs/roadmap.vi.md)
 - [Deploy on another computer](docs/deployment.md)
 - [Architecture v0.2](docs/architecture-v0.2.md)

@@ -12,7 +12,8 @@ Repo mang tên `hermes-a2a-gateway`. Để giữ tương thích cài đặt, pac
 
 Các luồng đã triển khai:
 
-- **Codex → Hermes/A2A:** Codex gọi bảy MCP tool qua stdio để giao việc cho Hermes Agent local.
+- **Client/server beta:** năm tool `gateway_*` để Codex Desktop giao việc cho Hermes trên server riêng và lấy kết quả bền vững.
+- **Codex → Hermes/A2A local:** bảy tool `hermes_*` để giao việc cho Hermes trên cùng máy.
 - **Hermes/A2A → Codex:** Hermes hoặc A2A client gọi HTTP/SSE gateway; gateway chuyển task vào Codex App Server.
 
 Với task Hermes → Codex chạy lâu, `a2a_call` built-in vẫn là một lượt đồng bộ. Plugin `codex_a2a` đi kèm `v0.4.0` bổ sung submit sớm, handle bền, poll/cancel, tiếp tục `INPUT_REQUIRED` và không blind resend sau timeout.
@@ -23,9 +24,20 @@ Inbound gateway dùng các operation A2A v1.0 phổ biến nên các A2A client 
 
 > **Phạm vi phiên bản:** `v0.6.0b1` bổ sung broker PostgreSQL, client SQLite, payload mã hóa có thời hạn, replay theo từng thiết bị và native queue để báo kết quả muộn vào task Desktop gốc. Đây là bản thử nghiệm chủ động bật; không thay thế database cũ hay bảy tool `hermes_*`. ACK không rõ vẫn được giữ là unknown, không tự gửi lại.
 
-Để triển khai Mac ↔ VPS, dùng [hướng dẫn client/server](docs/client-server-deployment.md). Quickstart bên dưới dành cho các chế độ local được giữ lại.
+## Cài đặt server và client trên hai máy
 
-## Cài đặt bằng agent
+Làm theo thứ tự dưới đây; hai máy dùng cùng release wheel, không cần clone repo:
+
+| Máy | Hướng dẫn | Nội dung |
+| --- | --- | --- |
+| Server/VPS chạy Hermes | [Cài đặt và sử dụng server](docs/server-hermes.vi.md) | Hermes A2A, PostgreSQL, broker, HTTPS/SSE, cấp token thiết bị và vận hành |
+| Máy cá nhân chạy Codex | [Cài đặt và sử dụng client](docs/client-codex.vi.md) | Daemon, tự khởi động, MCP Desktop, giao việc, nhận kết quả và xử lý lỗi |
+
+Server bàn giao HTTPS origin, token riêng cho thiết bị và CA certificate nếu cần. Encryption key của broker chỉ giữ trên server. [Tài liệu triển khai chung](docs/client-server-deployment.md) có lệnh tải release, kiểm tra checksum, retention và rollback.
+
+Các quickstart và setup skill bên dưới dành cho **chế độ local**, không cài broker/client mới. Broker trả kết quả Hermes về task Codex đã gửi việc; Hermes chủ động gọi một Codex backend là luồng inbound riêng.
+
+## Cài chế độ local bằng agent
 
 Gửi yêu cầu sau cho agent:
 

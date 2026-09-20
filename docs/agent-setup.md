@@ -1,5 +1,7 @@
 # Agent-led workstation setup — v0.5.1
 
+> For the v0.6 remote server/client topology, use the [Hermes server guide](server-hermes.vi.md) followed by the [Codex client guide](client-codex.vi.md). The setup skill described below configures the retained local modes; it does not provision the PostgreSQL broker or client daemon.
+
 Install the versioned `v0.5.1` release wheel without cloning. It includes `install-skills`, setup/usage guidance and direction-specific `doctor`. The earlier `v0.4.0` wheel does not include these additions. Full deployment operations are documented in [deployment.md](deployment.md).
 
 Give the agent this request:

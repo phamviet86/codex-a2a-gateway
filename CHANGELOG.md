@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Vietnamese server/Hermes and client/Codex deployment and usage guides, including private credential handoff, persistent services, MCP registration, result recovery and troubleshooting. Separate the v0.6 remote profile from legacy local quickstarts and make the shared fresh-install download stop on verification failures.
+
 - Rename the repository and product to `hermes-a2a-gateway` / Hermes A2A Gateway, with Codex Desktop as the first verified agent integration.
 - Update current installation links, project metadata and release repository checks. Preserve package/CLI names, Python namespace, environment variables, MCP registrations, state paths, protocol extension identifiers and published release assets.
 
