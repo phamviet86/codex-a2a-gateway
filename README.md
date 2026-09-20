@@ -8,7 +8,7 @@ Hermes A2A Gateway connects Codex Desktop to Hermes on a private server. The cli
 owns a durable local inbox and optional SSH tunnel; the broker owns a PostgreSQL
 ledger and dispatches work to the server's loopback Hermes A2A endpoint.
 
-**Release candidate: v0.7.0rc1.** Package, command and MCP registration are now
+**Release: v0.7.0.** Package, command and MCP registration are now
 `hermes-a2a-gateway`. The Python namespace is `hermes_a2a_gateway` and configuration
 uses `HERMES_A2A_GATEWAY_*`. This release removes the old local gateway modes,
 legacy executable aliases, setup skills and Hermes → Codex plugin.
@@ -97,7 +97,8 @@ local repository files are not automatically synchronized.
   from package installation or simulated reconnect tests.
 
 See the [wire contract](docs/client-server-contract.md), [deployment reference](docs/deployment.md),
-[release notes](docs/release-notes.md), and [historical evidence](docs/history/README.md).
+[release notes](docs/release-notes.md), [v0.7 verification](docs/testing-report-v0.7.0.md),
+and [historical evidence](docs/history/README.md).
 
 ## Development
 

@@ -1,6 +1,6 @@
 # Client/server v0.7 implementation contract
 
-Status: v0.7 release candidate, 2026-09-21. This version retains the v0.6
+Status: v0.7 release, 2026-09-21. This version retains the v0.6
 client/server ledger contract and removes legacy commands and adapters. It does not claim exactly-once execution or
 delivery. Initial topology: one owner, multiple devices, one broker process,
 PostgreSQL ledger, client SQLite and private HTTPS transport.

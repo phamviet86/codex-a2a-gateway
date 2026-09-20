@@ -1,6 +1,6 @@
-# v0.7.0rc1 — Hermes client/server and managed SSH tunnel
+# v0.7.0 — Hermes client/server and managed SSH tunnel
 
-This release candidate fixes `gateway_submit(wait_seconds=20)` being rejected
+This release fixes `gateway_submit(wait_seconds=20)` being rejected
 when the configured default wait is 15 seconds. Explicit waits from 0 to 60 are
 accepted; malformed waits fail before an operation is persisted.
 
@@ -24,9 +24,16 @@ writer before moving the inbox; remove obsolete operational installations only
 after the replacement passes verification. The release contains a wheel, source
 archive and `SHA256SUMS`; installation requires no Git clone.
 
-The candidate is intended for clean Mac/VPS installation and live Desktop
-verification before the final `0.7.0` release. CI and fake transport tests do not
-prove Desktop consumption. Native queue delivery remains version/schema gated;
-queue acknowledgement is not a user-consumption guarantee. Cancellation is best
-effort, offline host wake is not guaranteed, and an interrupted broker-to-Hermes
-stream may stop the underlying computation.
+The release candidate passed installed Mac/VPS testing: an explicit 20-second
+submit returned a durable operation, the daemon recovered after its own SSH child
+was terminated, and the result returned through native queue to the originating
+Desktop task. The same operation/result was retrieved without a second submit.
+See the [dated verification report](testing-report-v0.7.0.md) for exact artifacts,
+identities, CI and limits. Release publication also tolerates delayed GitHub draft
+visibility through read retries without creating duplicate releases.
+
+Native queue delivery remains version/schema gated; queue acknowledgement is
+not a user-consumption guarantee. Cancellation is best effort, offline host wake
+is not guaranteed, and an interrupted broker-to-Hermes stream may stop computation.
+Custom SSH helpers that deliberately detach or ignore SIGTERM are outside the
+macOS forced-daemon-exit cleanup guarantee.

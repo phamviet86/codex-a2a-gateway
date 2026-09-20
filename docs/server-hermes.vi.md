@@ -2,7 +2,7 @@
 
 Tài liệu này dành cho người vận hành một máy chủ riêng chạy Hermes và một hoặc
 nhiều máy Codex Desktop. Nó triển khai nhánh **Codex → Hermes → trả kết quả về
-Codex** của beta `v0.7.0rc1`:
+Codex** của `v0.7.0`:
 
 ```text
 Codex Desktop → client daemon → HTTPS riêng → broker → Hermes A2A loopback
@@ -26,7 +26,7 @@ Chuẩn bị trước:
 - Một Hermes đang hoạt động dưới một tài khoản Unix riêng, với A2A nội bộ đã xác
   thực và chỉ nghe `127.0.0.1:9900`.
 - PostgreSQL 16 trên cùng máy, một database riêng cho broker.
-- CPython 3.11 và wheel `v0.7.0rc1` đã được xác minh theo
+- CPython 3.11 và wheel `v0.7.0` đã được xác minh theo
   [hướng dẫn cài chung](deployment.md#install-the-same-release-on-both-machines).
 - DNS/private VPN và một reverse proxy TLS có CA được máy Codex tin cậy.
 
