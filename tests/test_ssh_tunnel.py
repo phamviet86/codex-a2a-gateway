@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import socket
@@ -18,6 +19,19 @@ def unused_port():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return listener.getsockname()[1]
+
+
+def assert_local_port_released(port):
+    # TIME_WAIT from a completed readiness connection is not a live listener.
+    # First prove connection refusal, then use the same reuse policy as SSH's
+    # real preflight. Never use SO_REUSEPORT to share an existing listener.
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        assert probe.connect_ex(("127.0.0.1", port)) == errno.ECONNREFUSED, "port is still accepting connections"
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", port))
+        listener.listen(1)
 
 
 @pytest.fixture
@@ -197,11 +211,12 @@ async def test_owned_ssh_lifecycle_and_environment(fake_ssh, monkeypatch):
     await wait_for(lambda: tunnel.available)
     assert tunnel.health()["state"] == "ready"
     pid = tunnel.process.pid
+    with pytest.raises(AssertionError, match="still accepting"):
+        assert_local_port_released(tunnel.config.local_port)
     await tunnel.close()
     assert not tunnel.available and tunnel.state == "stopped"
     assert_process_gone(pid)
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", tunnel.config.local_port))
+    assert_local_port_released(tunnel.config.local_port)
     assert len(rows(record)) == 2
 
 
@@ -448,8 +463,6 @@ asyncio.run(main())
                         process.kill()
                 except psutil.NoSuchProcess:
                     pass
-    with socket.socket() as listener:
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind(("127.0.0.1", port))
+    assert_local_port_released(port)
     result, _, _ = await launchctl("print", target)
     assert result != 0
