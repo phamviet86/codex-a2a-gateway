@@ -1,14 +1,10 @@
 # Codex A2A Gateway
 
-> **Hợp đồng reliability v0.4.0:** xem [job bền vững và trả kết quả](docs/durable-jobs.vi.md).
-> Handle outbound async được lưu trước discovery; recovery phải khớp request chính xác.
-> Hết lượt chờ không phải thất bại. Có nguồn job và receipt xác nhận nhận kết quả;
-> chưa tự chèn kết quả vào cuộc trò chuyện Desktop/Hermes gốc.
-
+> **Client/server beta v0.6:** Desktop MCP → daemon/inbox local → broker HTTPS/SSE → Hermes A2A. Xem [triển khai và giới hạn](docs/client-server-deployment.md). Các chế độ local cũ vẫn hoạt động.
 
 [English](README.md) | **Tiếng Việt**
 
-**Public beta · v0.5.1**
+**Bản thử nghiệm prerelease · v0.6.0b1**
 
 `codex-a2a-gateway` giúp Codex giao tiếp hai chiều theo chuẩn A2A v1.0:
 
@@ -21,20 +17,22 @@ Hermes là peer đầu tiên đã được kiểm thử, không phải giới h�
 
 > Đây là dự án cộng đồng độc lập, không phải sản phẩm chính thức hay được bảo trợ bởi OpenAI/Codex hoặc Nous Research/Hermes Agent.
 
-> **Phạm vi phiên bản:** `v0.5.1` sửa tương thích khi Hermes tạo task ID mới cho lượt tiếp tục, lưu binding từng lượt và chỉ khôi phục khi có bằng chứng chính xác. Giữ nguyên skills setup và luồng inbound.
+> **Phạm vi phiên bản:** `v0.6.0b1` bổ sung broker PostgreSQL, client SQLite, payload mã hóa có thời hạn, replay theo từng thiết bị và native queue để báo kết quả muộn vào task Desktop gốc. Đây là bản thử nghiệm chủ động bật; không thay thế database cũ hay bảy tool `hermes_*`. ACK không rõ vẫn được giữ là unknown, không tự gửi lại.
+
+Để triển khai Mac ↔ VPS, dùng [hướng dẫn client/server](docs/client-server-deployment.md). Quickstart bên dưới dành cho các chế độ local được giữ lại.
 
 ## Cài đặt bằng agent
 
 Gửi yêu cầu sau cho agent:
 
-> Cài Codex A2A Gateway v0.5.1 từ release wheel vào môi trường Python 3.11 riêng, cài skills đi kèm, rồi dùng `codex-a2a-setup` cấu hình máy này. Giữ thông tin đăng nhập và cấu hình hiện có; chỉ hỏi dữ liệu bắt buộc còn thiếu như chiều kết nối và workspace inbound. Kiểm tra kết nối và xác nhận client thấy tools.
+> Cài Codex A2A Gateway v0.6.0b1 từ release wheel vào môi trường Python 3.11 riêng, cài skills đi kèm, rồi dùng `codex-a2a-setup` cấu hình máy này. Giữ thông tin đăng nhập và cấu hình hiện có; chỉ hỏi dữ liệu bắt buộc còn thiếu như chiều kết nối và workspace inbound. Kiểm tra kết nối và xác nhận client thấy tools.
 
 Agent cài trực tiếp, không cần clone repository:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 
@@ -115,7 +113,7 @@ hermes tools enable a2a --platform cli
 
 ### Plugin reliable Hermes
 
-Wheel `v0.5.1` có plugin này; bật plugin và toolset riêng cho CLI:
+Wheel `v0.6.0b1` có plugin này; bật plugin và toolset riêng cho CLI:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -156,7 +154,7 @@ Chỉ chiều Hermes/A2A → Codex có extension opt-in được Agent Card qu�
 - Chiều outbound: `conversation_key` của Codex được ánh xạ tới Hermes `contextId`.
 - Chiều inbound: A2A `contextId`/task được ánh xạ tới Codex App Server thread/turn.
 - SQLite giữ mapping, task, trạng thái, result/artifact và lỗi tối thiểu qua restart.
-- Prompt outbound gốc không được gateway persist.
+- Adapter local cũ không lưu prompt outbound gốc. Client/broker v0.6 lưu prompt mã hóa có TTL để phục hồi dispatch; cần bảo vệ riêng database, khóa môi trường và backup.
 - Cancel là best-effort; kết quả luôn nói rõ việc computation đã dừng hay chưa vẫn là `unknown`.
 
 ## Giới hạn hiện tại

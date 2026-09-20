@@ -61,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="Run the MCP server over stdio")
     sub.add_parser("gateway", help="Run the standalone inbound A2A HTTP gateway")
+    sub.add_parser("broker", help="Run the authenticated v0.6 PostgreSQL broker")
+    sub.add_parser("client", help="Run the v0.6 local client daemon")
+    sub.add_parser("client-mcp", help="Run the v0.6 Desktop MCP client over stdio")
+    sub.add_parser("client-doctor", help="Check client configuration and native delivery capability")
     doctor = sub.add_parser("doctor", help="Check selected transport without submitting a model task")
     doctor.add_argument("--mode", choices=("outbound", "inbound", "both"), default="outbound")
     skills = sub.add_parser("install-skills", help="Install the bundled setup and usage skills")
@@ -139,6 +143,27 @@ def main() -> None:
     if command == "gateway":
         run_gateway()
         return
+    if command == "broker":
+        from .broker import run_broker
+
+        run_broker()
+        return
+    if command == "client":
+        from .client import run_client
+
+        run_client()
+        return
+    if command == "client-mcp":
+        from .client_mcp import run_client_mcp
+
+        run_client_mcp()
+        return
+    if command == "client-doctor":
+        from .client import client_doctor
+
+        result = client_doctor()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        raise SystemExit(0 if result.get("ok") else 1)
     if command == "doctor":
         raise SystemExit(asyncio.run(_status(args.mode)))
     if command == "install-skills":

@@ -15,9 +15,9 @@ from typing import Any
 import pytest
 
 
-@pytest.fixture
-def publisher() -> ModuleType:
-    path = Path(__file__).parents[1] / "scripts/publish_v051.py"
+@pytest.fixture(params=["v051", "v060"])
+def publisher(request: pytest.FixtureRequest) -> ModuleType:
+    path = Path(__file__).parents[1] / f"scripts/publish_{request.param}.py"
     spec = importlib.util.spec_from_file_location("publish_v051", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -25,7 +25,7 @@ def publisher() -> ModuleType:
     return module
 
 
-def valid_run() -> dict[str, Any]:
+def valid_run(version: str = "0.5.1") -> dict[str, Any]:
     return {
         "id": 123,
         "name": "CI",
@@ -35,7 +35,7 @@ def valid_run() -> dict[str, Any]:
         "head_branch": "main",
         "head_repository": {"full_name": "phamviet86/codex-a2a-gateway"},
         "head_sha": "a" * 40,
-        "head_commit": {"message": "Fix Hermes continuation [release v0.5.1]"},
+        "head_commit": {"message": f"Publish [release v{version}]"},
     }
 
 
@@ -53,7 +53,7 @@ def valid_run() -> dict[str, Any]:
     ],
 )
 def test_publisher_rejects_unproven_ci(publisher: ModuleType, field: str, value: Any) -> None:
-    run = valid_run()
+    run = valid_run(publisher.VERSION)
     publisher.validate_run(publisher.REPOSITORY, "a" * 40, run)
     run[field] = value
     with pytest.raises(RuntimeError):
@@ -62,7 +62,7 @@ def test_publisher_rejects_unproven_ci(publisher: ModuleType, field: str, value:
 
 def test_publisher_rejects_a_foreign_repository(publisher: ModuleType) -> None:
     with pytest.raises(RuntimeError, match="repository"):
-        publisher.validate_run("fork/project", "a" * 40, valid_run())
+        publisher.validate_run("fork/project", "a" * 40, valid_run(publisher.VERSION))
 
 
 def test_publisher_never_retargets_an_existing_tag(publisher: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,9 +83,10 @@ def test_publication_orders_verification_before_publish(
     monkeypatch.setenv("RELEASE_SHA", "a" * 40)
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
     event = tmp_path / "event.json"
-    event.write_text(json.dumps({"workflow_run": valid_run()}))
+    event.write_text(json.dumps({"workflow_run": valid_run(publisher.VERSION)}))
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
-    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.5.1"\n')
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nversion = "{publisher.VERSION}"\n')
+    monkeypatch.setattr("codex_a2a_gateway.__version__", publisher.VERSION)
     dist = tmp_path / "dist"
     dist.mkdir()
     for name in publisher.ASSETS:
@@ -93,7 +94,7 @@ def test_publication_orders_verification_before_publish(
     calls: list[str] = []
     release = {
         "draft": mode not in {"published", "published-missing-asset"},
-        "prerelease": False,
+        "prerelease": "b" in publisher.VERSION,
         "assets": [{"name": name} for name in publisher.ASSETS] if mode == "published" else [],
         "html_url": "fixture",
     }
@@ -102,7 +103,7 @@ def test_publication_orders_verification_before_publish(
     def fake_api(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
         nonlocal main_reads
         if "/actions/runs/" in path:
-            return copy.deepcopy(valid_run())
+            return copy.deepcopy(valid_run(publisher.VERSION))
         if path.endswith("/git/ref/heads/main"):
             main_reads += 1
             sha = "b" * 40 if mode == "main-moved" and main_reads == 2 else "a" * 40
@@ -114,7 +115,7 @@ def test_publication_orders_verification_before_publish(
         if "/releases/tags/" in path:
             return {
                 "draft": False,
-                "prerelease": False,
+                "prerelease": "b" in publisher.VERSION,
                 "assets": [{"name": n} for n in publisher.ASSETS],
                 "html_url": "fixture",
             }
@@ -157,30 +158,31 @@ def test_publication_orders_verification_before_publish(
             assert "release upload" not in calls
 
 
-@pytest.mark.parametrize("version", ["0.5.1", "0.4.0"])
+@pytest.mark.parametrize("version", ["current", "0.4.0"])
 def test_existing_download_checks_distribution_version(publisher: ModuleType, tmp_path: Path, version: str) -> None:
+    version = publisher.VERSION if version == "current" else version
     with zipfile.ZipFile(tmp_path / publisher.ASSETS[0], "w") as wheel:
         wheel.writestr("codex_a2a_gateway-0.5.1.dist-info/METADATA", f"Name: codex-a2a-gateway\nVersion: {version}\n")
     with tarfile.open(tmp_path / publisher.ASSETS[1], "w:gz") as archive:
-        content = b'[project]\nname = "codex-a2a-gateway"\nversion = "0.5.1"\n'
+        content = f'[project]\nname = "codex-a2a-gateway"\nversion = "{publisher.VERSION}"\n'.encode()
         info = tarfile.TarInfo("codex_a2a_gateway-0.5.1/pyproject.toml")
         info.size = len(content)
         archive.addfile(info, io.BytesIO(content))
     (tmp_path / "SHA256SUMS").write_text(
         "".join(f"{publisher.digest(tmp_path / name)}  {name}\n" for name in sorted(publisher.ASSETS[:2]))
     )
-    if version == "0.5.1":
+    if version == publisher.VERSION:
         publisher.verify_download(tmp_path)
     else:
         with pytest.raises(RuntimeError, match="wheel version mismatch"):
             publisher.verify_download(tmp_path)
 
 
-def test_release_workflow_checks_out_successful_main_push_sha() -> None:
+def test_release_workflow_checks_out_successful_main_push_sha(publisher: ModuleType) -> None:
     root = Path(__file__).parents[1]
     if not (root / ".git").exists() and (root / "PKG-INFO").is_file():
         pytest.skip("release workflow is checkout-only and excluded from the sdist")
-    workflow = (root / ".github/workflows/release-v0.5.1.yml").read_text()
+    workflow = (root / f".github/workflows/release-v{publisher.VERSION}.yml").read_text()
     for guard in (
         "workflow_run:",
         "workflows: [CI]",
@@ -188,9 +190,9 @@ def test_release_workflow_checks_out_successful_main_push_sha() -> None:
         "github.event.workflow_run.event == 'push'",
         "github.event.workflow_run.head_branch == 'main'",
         "github.event.workflow_run.head_repository.full_name == github.repository",
-        "contains(github.event.workflow_run.head_commit.message, '[release v0.5.1]')",
+        f"contains(github.event.workflow_run.head_commit.message, '[release v{publisher.VERSION}]')",
         "ref: ${{ github.event.workflow_run.head_sha }}",
         'test "$(git rev-parse HEAD)" = "$RELEASE_SHA"',
-        "run: python scripts/publish_v051.py",
+        f"run: python scripts/{Path(publisher.__file__).name}",
     ):
         assert guard in workflow

@@ -13,6 +13,16 @@ Hermes is the first verified outbound peer, not the product boundary. Do not tur
 
 ## Architecture ownership
 
+The approved v0.6 beta adds a separate client/server mode. Read
+`docs/client-server-v0.6-contract.md` for its wire and durability contract.
+`broker*.py` owns the PostgreSQL broker and loopback Hermes dispatcher;
+`client*.py` owns the single-writer local SQLite daemon and Desktop MCP facade;
+`native_delivery.py` owns version-gated native queue delivery. These modules do
+not migrate or replace the legacy database. Only this new path may persist
+encrypted prompt payloads with an environment key and enforced retention TTL.
+Native queue insertion is not idempotent: uncertain submission remains
+`delivery_outcome_unknown` until exact evidence reconciles it.
+
 - `src/codex_a2a_gateway/server.py`, `core.py`, and `a2a.py`: outbound MCP-to-A2A adapter.
 - `src/codex_a2a_gateway/gateway.py` and `inbound.py`: inbound A2A transport and task lifecycle.
 - `src/codex_a2a_gateway/codex_backend.py`: Codex App Server and CLI compatibility adapters.

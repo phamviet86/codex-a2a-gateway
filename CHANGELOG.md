@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0b1 — 2026-09-21
+
+- Add an opt-in client/server beta: Desktop MCP and a single-writer local SQLite daemon communicate with a PostgreSQL broker over authenticated HTTPS commands and resumable SSE.
+- Persist encrypted expiring dispatch payloads, device-scoped operations and stable result identities. Separate execution, inbox receipts and native delivery outcomes; never replay an ambiguous Hermes mutation or Desktop queue insertion.
+- Add bounded artifact storage, device quotas, retention, exact operation recovery and per-flow serialization. Preserve legacy commands, seven `hermes_*` tools, inbound Agent Card behavior and existing databases.
+- Add a version/schema-checked native queue adapter and explicit get/wait fallback. Idle wake is version dependent; queue acknowledgement is not proof that the result was consumed. Offline/unloaded host wake and exactly-once delivery are not guaranteed.
+- Add a dedicated PostgreSQL CI job and prerelease publication checks. See the dated v0.6 deployment evidence for actual installed-host validation.
+
 ## 0.5.1 — 2026-09-15
 
 - Support Hermes rotating outbound continuation task IDs through one current-request Task snapshot with matching JSON-RPC response ID and explicit context; preserve stable bridge handles, origins, attempt idempotency and receipts.

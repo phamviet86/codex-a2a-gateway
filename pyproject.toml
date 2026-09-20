@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codex-a2a-gateway"
-version = "0.5.1"
+version = "0.6.0b1"
 description = "Bidirectional A2A v1.0 gateway for Codex with MCP and App Server adapters"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
@@ -21,9 +21,11 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
+  "cryptography>=44,<51",
   "httpx>=0.27,<1",
   "mcp>=2.0,<3",
   "pydantic>=2.10,<3",
+  "psycopg[binary]>=3.2,<4",
   "starlette>=1.6,<2",
   "uvicorn>=0.52,<1",
 ]
