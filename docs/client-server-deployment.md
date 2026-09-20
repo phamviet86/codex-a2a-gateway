@@ -31,7 +31,7 @@ Download the wheel and checksums from the versioned GitHub release, without a cl
 
 ```bash
 release_dir=$(mktemp -d)
-release_url=https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.6.0b1
+release_url=https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.6.0b1
 wheel=codex_a2a_gateway-0.6.0b1-py3-none-any.whl
 sdist=codex_a2a_gateway-0.6.0b1.tar.gz
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"

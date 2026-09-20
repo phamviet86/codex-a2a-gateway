@@ -34,7 +34,7 @@ def valid_run() -> dict[str, Any]:
         "conclusion": "success",
         "event": "push",
         "head_branch": "main",
-        "head_repository": {"full_name": "phamviet86/codex-a2a-gateway"},
+        "head_repository": {"full_name": "phamviet86/hermes-a2a-gateway"},
         "head_sha": "a" * 40,
         "head_commit": {"message": "Ship onboarding [release v0.5.0]"},
     }

@@ -19,7 +19,7 @@ from typing import Any
 
 VERSION = "0.5.0"
 TAG = "v" + VERSION
-REPOSITORY = "phamviet86/codex-a2a-gateway"
+REPOSITORY = "phamviet86/hermes-a2a-gateway"
 ASSETS = [f"codex_a2a_gateway-{VERSION}-py3-none-any.whl", f"codex_a2a_gateway-{VERSION}.tar.gz", "SHA256SUMS"]
 
 

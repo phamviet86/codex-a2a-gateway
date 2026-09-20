@@ -1,8 +1,8 @@
-# Codex A2A Gateway
+# Hermes A2A Gateway
 
 > **v0.6 client/server beta:** Desktop MCP → local durable inbox → authenticated HTTPS/SSE broker → Hermes A2A. See [deployment and limitations](docs/client-server-deployment.md). Legacy local inbound/outbound modes remain available.
 
-[![CI](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml)
+[![CI](https://github.com/phamviet86/hermes-a2a-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/phamviet86/hermes-a2a-gateway/actions/workflows/ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
@@ -11,12 +11,14 @@
 
 English | [Tiếng Việt](README.vi.md)
 
-`codex-a2a-gateway` provides local and client/server adapters that let Codex participate in A2A v1.0 workflows.
+Hermes A2A Gateway connects Hermes with AI agents through durable A2A workflows. Codex Desktop is the first verified agent integration; adapters for other agent runtimes are not implemented yet.
+
+The repository is now `hermes-a2a-gateway`. For installation compatibility, the Python distribution and command remain `codex-a2a-gateway`, the namespace remains `codex_a2a_gateway`, and existing environment variables, MCP registrations and state paths stay unchanged.
 
 - **Codex → A2A:** Codex calls seven MCP stdio tools that delegate to the local Hermes A2A peer.
 - **A2A → Codex:** Hermes or another A2A v1.0 client calls an HTTP/SSE gateway backed by Codex App Server.
 
-Hermes Agent is the first verified peer, not the product boundary. The inbound endpoint uses portable A2A v1.0 operations and can be called by other compliant clients.
+The existing inbound endpoint uses portable A2A v1.0 operations and can be called by other compliant clients. This repository rename does not add native integrations for additional agents.
 
 > **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
 
@@ -84,7 +86,7 @@ The agent can install without cloning the repository:
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 
@@ -95,8 +97,8 @@ See the complete [deployment guide](docs/deployment.md) for prerequisites, MCP r
 For a source checkout or contributor environment:
 
 ```bash
-git clone https://github.com/phamviet86/codex-a2a-gateway.git
-cd codex-a2a-gateway
+git clone https://github.com/phamviet86/hermes-a2a-gateway.git
+cd hermes-a2a-gateway
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e .
 .venv/bin/codex-a2a-gateway --help

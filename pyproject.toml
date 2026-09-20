@@ -31,11 +31,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/phamviet86/codex-a2a-gateway"
-Documentation = "https://github.com/phamviet86/codex-a2a-gateway/tree/main/docs"
-Source = "https://github.com/phamviet86/codex-a2a-gateway"
-Issues = "https://github.com/phamviet86/codex-a2a-gateway/issues"
-Changelog = "https://github.com/phamviet86/codex-a2a-gateway/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/phamviet86/hermes-a2a-gateway"
+Documentation = "https://github.com/phamviet86/hermes-a2a-gateway/tree/main/docs"
+Source = "https://github.com/phamviet86/hermes-a2a-gateway"
+Issues = "https://github.com/phamviet86/hermes-a2a-gateway/issues"
+Changelog = "https://github.com/phamviet86/hermes-a2a-gateway/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

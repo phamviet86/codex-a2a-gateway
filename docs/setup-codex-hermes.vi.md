@@ -38,7 +38,7 @@ Chỉ cài sau khi SHA-256 của **cả wheel và source archive** khớp `SHA25
 
 ```bash
 release_dir="$(mktemp -d)"
-release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1"
+release_url="https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.5.1"
 wheel="codex_a2a_gateway-0.5.1-py3-none-any.whl"
 sdist="codex_a2a_gateway-0.5.1.tar.gz"
 
