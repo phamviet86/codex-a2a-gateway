@@ -1,6 +1,6 @@
 """Opt-in process integration: PostgreSQL + HTTP broker + Unix client + fake peers.
 
-Run with CODEX_A2A_GATEWAY_TEST_POSTGRES_DSN pointing to disposable PostgreSQL.
+Run with HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN pointing to disposable PostgreSQL.
 Each test creates/drops only its own random schema. No real model or Desktop is
 contacted. Native queue protocol records prove routing/replay behavior, NOT wake.
 Subprocesses import the same package location as the pytest process, allowing
@@ -29,9 +29,9 @@ import httpx
 import pytest
 from fake_a2a import FakeA2AServer
 
-import codex_a2a_gateway
+import hermes_a2a_gateway
 
-DSN_ENV = "CODEX_A2A_GATEWAY_TEST_POSTGRES_DSN"
+DSN_ENV = "HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN"
 TOKEN_A = "integration-device-a-" + "a" * 32
 TOKEN_B = "integration-device-b-" + "b" * 32
 
@@ -390,34 +390,34 @@ class Stack:
         self.env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(directory),
-            "PYTHONPATH": str(Path(codex_a2a_gateway.__file__).resolve().parent.parent),
+            "PYTHONPATH": str(Path(hermes_a2a_gateway.__file__).resolve().parent.parent),
             "PYTHONUNBUFFERED": "1",
             "INTEGRATION_QUEUE_RECORD": str(self.queue_record),
             "HERMES_A2A_ENDPOINT": self.peer.endpoint,
-            "CODEX_A2A_GATEWAY_BROKER_DATABASE_URL": dsn,
-            "CODEX_A2A_GATEWAY_BROKER_DEVICE_TOKENS": json.dumps({"device-a": TOKEN_A, "device-b": TOKEN_B}),
-            "CODEX_A2A_GATEWAY_BROKER_ENCRYPTION_KEY": Fernet.generate_key().decode(),
-            "CODEX_A2A_GATEWAY_BROKER_PUBLIC_URL": self.broker_url,
-            "CODEX_A2A_GATEWAY_BROKER_HOST": "127.0.0.1",
-            "CODEX_A2A_GATEWAY_BROKER_PORT": self.broker_url.rsplit(":", 1)[1],
-            "CODEX_A2A_GATEWAY_BROKER_ALLOW_LOOPBACK_HTTP": "true",
-            "CODEX_A2A_GATEWAY_BROKER_POLL_SECONDS": "0.05",
-            "CODEX_A2A_GATEWAY_BROKER_ARTIFACT_TTL_SECONDS": "2",
-            "CODEX_A2A_GATEWAY_BROKER_MAX_ARTIFACT_BYTES": "1024",
-            "CODEX_A2A_GATEWAY_BROKER_DEVICE_QUOTA_BYTES": "2048",
-            "CODEX_A2A_GATEWAY_CLIENT_BROKER_URL": self.proxy.url,
-            "CODEX_A2A_GATEWAY_CLIENT_TOKEN": TOKEN_A,
-            "CODEX_A2A_GATEWAY_CLIENT_PAYLOAD_KEY": Fernet.generate_key().decode(),
-            "CODEX_A2A_GATEWAY_CLIENT_STATE_DIR": str(directory / "client"),
-            "CODEX_A2A_GATEWAY_CLIENT_ALLOW_LOOPBACK_HTTP": "true",
-            "CODEX_A2A_GATEWAY_CLIENT_INLINE_WAIT_SECONDS": "0.1",
-            "CODEX_A2A_GATEWAY_CLIENT_REQUEST_TIMEOUT_SECONDS": "2",
-            "CODEX_A2A_GATEWAY_CLIENT_CODEX_COMMAND": str(command),
+            "HERMES_A2A_GATEWAY_BROKER_DATABASE_URL": dsn,
+            "HERMES_A2A_GATEWAY_BROKER_DEVICE_TOKENS": json.dumps({"device-a": TOKEN_A, "device-b": TOKEN_B}),
+            "HERMES_A2A_GATEWAY_BROKER_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "HERMES_A2A_GATEWAY_BROKER_PUBLIC_URL": self.broker_url,
+            "HERMES_A2A_GATEWAY_BROKER_HOST": "127.0.0.1",
+            "HERMES_A2A_GATEWAY_BROKER_PORT": self.broker_url.rsplit(":", 1)[1],
+            "HERMES_A2A_GATEWAY_BROKER_ALLOW_LOOPBACK_HTTP": "true",
+            "HERMES_A2A_GATEWAY_BROKER_POLL_SECONDS": "0.05",
+            "HERMES_A2A_GATEWAY_BROKER_ARTIFACT_TTL_SECONDS": "2",
+            "HERMES_A2A_GATEWAY_BROKER_MAX_ARTIFACT_BYTES": "1024",
+            "HERMES_A2A_GATEWAY_BROKER_DEVICE_QUOTA_BYTES": "2048",
+            "HERMES_A2A_GATEWAY_CLIENT_BROKER_URL": self.proxy.url,
+            "HERMES_A2A_GATEWAY_CLIENT_TOKEN": TOKEN_A,
+            "HERMES_A2A_GATEWAY_CLIENT_PAYLOAD_KEY": Fernet.generate_key().decode(),
+            "HERMES_A2A_GATEWAY_CLIENT_STATE_DIR": str(directory / "client"),
+            "HERMES_A2A_GATEWAY_CLIENT_ALLOW_LOOPBACK_HTTP": "true",
+            "HERMES_A2A_GATEWAY_CLIENT_INLINE_WAIT_SECONDS": "0.1",
+            "HERMES_A2A_GATEWAY_CLIENT_REQUEST_TIMEOUT_SECONDS": "2",
+            "HERMES_A2A_GATEWAY_CLIENT_CODEX_COMMAND": str(command),
         }
         self.processes: list[Process] = []
 
     def start_broker(self) -> Process:
-        process = Process("codex_a2a_gateway.broker", self.env.copy(), self.directory, "broker")
+        process = Process("hermes_a2a_gateway.broker", self.env.copy(), self.directory, "broker")
         self.processes.append(process)
 
         def ready() -> bool:
@@ -430,7 +430,7 @@ class Stack:
         return process
 
     def start_client(self) -> Process:
-        process = Process("codex_a2a_gateway.client", self.env.copy(), self.directory, "client")
+        process = Process("hermes_a2a_gateway.client", self.env.copy(), self.directory, "client")
         self.processes.append(process)
 
         def ready() -> bool:
@@ -604,8 +604,8 @@ def test_native_lost_ack_stays_unknown_without_repeat_after_client_restart(stack
 
 
 def test_device_flow_isolation_and_bounded_artifact_retention(stack: Stack) -> None:
-    stack.env["CODEX_A2A_GATEWAY_BROKER_MAX_ARTIFACT_BYTES"] = "32"
-    stack.env["CODEX_A2A_GATEWAY_BROKER_DEVICE_QUOTA_BYTES"] = "48"
+    stack.env["HERMES_A2A_GATEWAY_BROKER_MAX_ARTIFACT_BYTES"] = "32"
+    stack.env["HERMES_A2A_GATEWAY_BROKER_DEVICE_QUOTA_BYTES"] = "48"
     stack.start_broker()
     request = {
         "operation_id": str(uuid4()),
@@ -654,7 +654,7 @@ def test_device_flow_isolation_and_bounded_artifact_retention(stack: Stack) -> N
 
 
 def test_inline_deadline_and_terminal_sse_do_not_double_deliver(stack: Stack) -> None:
-    stack.env["CODEX_A2A_GATEWAY_CLIENT_INLINE_WAIT_SECONDS"] = "3"
+    stack.env["HERMES_A2A_GATEWAY_CLIENT_INLINE_WAIT_SECONDS"] = "3"
     stack.proxy.duplicate_sse = True
     stack.proxy.replay_from_zero = True
     stack.start_broker()
@@ -696,7 +696,7 @@ def test_inline_deadline_and_terminal_sse_do_not_double_deliver(stack: Stack) ->
 
 
 def test_sse_retention_gap_recovers_exact_known_operation_after_restart(stack: Stack) -> None:
-    stack.env["CODEX_A2A_GATEWAY_BROKER_EVENT_TTL_SECONDS"] = "1"
+    stack.env["HERMES_A2A_GATEWAY_BROKER_EVENT_TTL_SECONDS"] = "1"
     stack.peer.release.clear()
     stack.start_broker()
     client = stack.start_client()
@@ -738,7 +738,7 @@ def test_sse_retention_gap_recovers_exact_known_operation_after_restart(stack: S
 def test_client_upload_and_text_only_peer_input_contract(stack: Stack) -> None:
     import base64
 
-    stack.env["CODEX_A2A_GATEWAY_BROKER_ARTIFACT_TTL_SECONDS"] = "10"
+    stack.env["HERMES_A2A_GATEWAY_BROKER_ARTIFACT_TTL_SECONDS"] = "10"
     stack.start_broker()
     stack.start_client()
     meta = origin()

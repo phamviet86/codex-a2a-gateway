@@ -4,8 +4,8 @@ import json
 from types import SimpleNamespace
 from uuid import uuid4
 
-from codex_a2a_gateway import client_mcp
-from codex_a2a_gateway.native_delivery import NativeOrigin
+from hermes_a2a_gateway import client_mcp
+from hermes_a2a_gateway.native_delivery import NativeOrigin
 
 
 def context():
@@ -66,6 +66,6 @@ async def test_upload_is_explicit_bounded_regular_file_and_never_sends_path(tmp_
     symlink = tmp_path / "link"
     symlink.symlink_to(file)
     assert (await client_mcp.gateway_upload_artifact(str(symlink), context())).is_error
-    monkeypatch.setenv("CODEX_A2A_GATEWAY_CLIENT_MAX_UPLOAD_BYTES", "2")
+    monkeypatch.setenv("HERMES_A2A_GATEWAY_CLIENT_MAX_UPLOAD_BYTES", "2")
     assert (await client_mcp.gateway_upload_artifact(str(file), context())).is_error
     assert len(recorded) == 1

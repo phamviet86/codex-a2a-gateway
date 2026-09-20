@@ -1,76 +1,69 @@
 # Repository guidance
 
-These instructions apply to the entire repository. Codex and other coding agents should read this file before changing code, tests, documentation, packaging, or release metadata.
+Read this file before changing code, tests, documentation, packaging or release metadata.
 
-## Mission and scope
+## Mission and current contract
 
-`hermes-a2a-gateway` connects Hermes with AI agents through A2A. Codex Desktop
-is the first verified agent integration. Current implemented legacy flows include:
+`hermes-a2a-gateway` connects Codex Desktop to a private Hermes server using MCP,
+a local SQLite client daemon, authenticated HTTPS/SSE, a PostgreSQL broker and
+loopback Hermes A2A. Direct and daemon-managed SSH tunnel transports are supported.
+The only public commands are `broker`, `client`, `client-mcp`, and `client-doctor`.
 
-- Outbound: Codex calls the local MCP stdio server, which delegates to the configured loopback Hermes A2A peer.
-- Inbound: an A2A client calls the HTTP/SSE gateway, which maps the task to a Codex App Server thread and turn.
+The operator explicitly authorized the v0.7 breaking rename and removal of all
+legacy gateway modes, executable aliases, setup skills and Hermes client plugin.
+Do not restore `serve`, the inbound Codex gateway, CLI backend, seven `hermes_*`
+tools or old configuration aliases. Historical evidence is not current setup guidance.
 
-The repository/product rename does not implement adapters for additional agent runtimes. Do not turn this project into Hermes administration, a general arbitrary-URL proxy, or a multi-tenant service without an explicit architecture and security decision.
+Canonical distribution, executable and MCP registration: `hermes-a2a-gateway`.
+Python namespace: `hermes_a2a_gateway`. Configuration uses `HERMES_A2A_GATEWAY_*`;
+`HERMES_A2A_ENDPOINT` and `HERMES_A2A_TOKEN` configure the server's Hermes peer.
+See `docs/client-server-contract.md`, `docs/deployment.md`, and the current README.
 
-## Architecture ownership
+## Ownership and invariants
 
-The approved v0.6 beta adds a separate client/server mode. Read
-`docs/client-server-v0.6-contract.md` for its wire and durability contract.
-`broker*.py` owns the PostgreSQL broker and loopback Hermes dispatcher;
-`client*.py` owns the single-writer local SQLite daemon and Desktop MCP facade;
-`native_delivery.py` owns version-gated native queue delivery. These modules do
-not migrate or replace the legacy database. Only this new path may persist
-encrypted prompt payloads with an environment key and enforced retention TTL.
-Native queue insertion is not idempotent: uncertain submission remains
-`delivery_outcome_unknown` until exact evidence reconciles it.
+- `broker*.py`: PostgreSQL ledger, authenticated API, loopback Hermes dispatch.
+- `client*.py`: single-writer SQLite inbox, MCP facade and transport lifecycle.
+- `ssh_tunnel.py`: client-owned SSH process, strict authentication, retry and cleanup.
+- `native_delivery.py`: version/schema-gated native queue delivery.
+- `a2a.py`, `settings.py`, `models.py`: internal loopback peer protocol transport.
+- MCP stdout contains protocol frames only; diagnostics go to stderr.
+- No model-supplied URL, SSH target, credential or execution identity. Native origin
+  comes from trusted host MCP metadata; reject missing or inconsistent identity.
+- Verify TLS and SSH host keys, retain device bearer authentication inside tunnels,
+  bind local forwards to loopback, and never invoke SSH through shell interpolation.
+  Only the daemon owns its tunnel; never kill unrelated SSH processes or services.
+- Broker requires HTTPS at a trusted proxy for remote deployment. Hermes remains
+  loopback-only. Development loopback HTTP is explicit and never a remote fallback.
+- Secret inputs come from protected environment injection. Never log, echo or commit
+  tokens, keys, prompt payloads, private configuration or raw authentication errors.
+  Native/SSH child environments must scrub both new and historical secret prefixes.
+- Payload encryption keys stay outside stores. Enforce retention, restrictive modes
+  and quotas. Results/artifacts/backups can also be sensitive.
+- Retry network connectivity with bounds and backoff, not ambiguous agent work.
+  Reconcile Hermes mutations only by exact saved task identity. Preserve
+  `outcome_unknown` when evidence is insufficient. Native queue insertion is not
+  idempotent; uncertain acknowledgement remains `delivery_outcome_unknown` and
+  must not be blindly re-enqueued. Queue ACK does not prove Desktop consumption.
+- Cancellation is best-effort; never claim upstream computation stopped without proof.
+- Preserve A2A v1 shapes; do not add the legacy stream `final` field.
+- Preserve per-flow serialization, bounded admission, one broker dispatcher and one
+  active client writer per SQLite file. Do not run old/new daemons on the same inbox.
+- v0.6 client and broker data survive the rename. Preserve `broker_v06_*` schema,
+  the peer context UUID namespace, device/flow/native origin IDs, operation/result/
+  delivery IDs, receipts, cursor, ciphertext and keys. Additive migrations only.
+  Legacy SQLite data is archived, not interpreted as a modern inbox or discarded.
+- Explicit submit waits support 0–60 seconds; the configured inline wait is the
+  default, not an undisclosed smaller ceiling. Reject invalid arguments clearly
+  before persistence or dispatch, without exposing submitted content.
 
-- `src/codex_a2a_gateway/server.py`, `core.py`, and `a2a.py`: outbound MCP-to-A2A adapter.
-- `src/codex_a2a_gateway/gateway.py` and `inbound.py`: inbound A2A transport and task lifecycle.
-- `src/codex_a2a_gateway/codex_backend.py`: Codex App Server and CLI compatibility adapters.
-- `src/codex_a2a_gateway/store.py`: SQLite schema, mappings, tasks, messages, events, and migrations.
-- `src/codex_a2a_gateway/settings.py`: environment contract and network policy.
-- `tests/`: mirrors these boundaries with fake-server and protocol regression coverage.
-
-Treat `docs/durable-jobs.md`, `docs/architecture-v0.2.md`, `docs/inbound-gateway.md`, and the current README as the implemented contract. Files labelled as v0.1 or research are historical evidence, not the current specification.
-
-## Non-negotiable invariants
-
-- MCP stdout contains protocol frames only. Send diagnostics to stderr.
-- Outbound endpoints and discovered interfaces remain loopback-only. Never accept a model-supplied URL or credential.
-- Inbound non-loopback bind or public URL requires bearer authentication. Remote deployment also requires TLS at a trusted proxy.
-- Read secrets from environment variables. Never log, persist, echo, or commit tokens.
-- Do not persist the original outbound prompt. Results and artifacts can still be sensitive and require restrictive file permissions and retention.
-- Never automatically resend a mutating A2A request after an ambiguous transport outcome. Reconcile only by saved task ID or exact request message identity, never context/unique-candidate inference; preserve `outcome_unknown` when evidence is ambiguous.
-- Cancellation remains best-effort. Never claim that the underlying agent computation stopped unless an upstream protocol proves it.
-- Preserve A2A v1 task and event shapes. Do not reintroduce the legacy stream field `final`.
-- Codex App Server over stdio is the default inbound backend. CLI mode is an explicit compatibility path and may not take over a context that already owns an App Server thread.
-- Preserve per-context serialization, bounded admission, and the one-active-writer assumption for each SQLite state file.
-- SQLite migrations must be additive and backward-compatible. Never discard existing context, task, message, or event records.
-- Live tests and `smoke` are opt-in, use harmless prompts, and never run in CI.
-- The bundled Hermes `codex_a2a` plugin is the reliable Hermes → Codex client path. Keep its endpoint loopback-only, persist only task/context handles in `ctx.state`, submit with `returnImmediately`, and never resend after an ambiguous result. The built-in Hermes `a2a_call` remains synchronous.
-- Execution preferences are inbound-only and require the negotiated Agent Card extension (`A2A-Extensions`, `message.extensions`, and `message.metadata.executionPreferences`). Query App Server `model/list`; receiver policy may narrow that catalog but must not invent support. Persist requested/effective decisions, send only `model` and `effort` to `turn/start`, and reject the extension in CLI mode.
-
-## Compatibility policy
-
-- Repository/product name: `hermes-a2a-gateway` / Hermes A2A Gateway. The rename does not migrate runtime identifiers.
-- Preserve the existing execution-preferences extension URI, including its old repository URL: it is a negotiated wire identifier, not just a documentation link.
-
-- Canonical distribution, executable, and Python namespace: `codex-a2a-gateway`, `codex-a2a-gateway`, and `codex_a2a_gateway`.
-- The `codex-hermes-a2a-bridge` executable and legacy `HERMES_BRIDGE_*` / `CODEX_BRIDGE_*` environment variables are temporary v0.2 compatibility aliases. Canonical `CODEX_A2A_GATEWAY_*` values take precedence.
-- Keep `HERMES_A2A_ENDPOINT`, `HERMES_A2A_TOKEN`, and `HERMES_A2A_CONVERSATION_DIR`; they describe the outbound Hermes adapter.
-- Keep persisted and wire identifiers such as `bridge_task_id`, `BridgeService`, SQLite column names, and the seven `hermes_*` MCP tools unless a versioned migration is designed.
-- If the new default state file is absent and the legacy state file exists, continue using the legacy file. Do not silently move or delete a live database.
-
-## Development workflow
+## Development and validation
 
 1. Inspect `git status` and preserve unrelated user changes.
 2. Use CPython 3.11 and the project virtual environment.
-3. Keep changes scoped to the requested behavior; avoid speculative protocol expansion.
-4. Add tests for changes involving protocol shape, persistence, retry, timeout, idempotency, cancellation, restart, authentication, or network policy.
-5. Update README, `.env.example`, Agent Card claims, relevant docs, and `CHANGELOG.md` whenever a public contract changes.
-6. Do not rewrite historical test evidence to look current; add a new dated report instead.
-
-## Required validation
+3. Keep work scoped. Add regression tests for protocol, persistence, authentication,
+   timeouts, idempotence, cancellation, restart, tunnel lifecycle and network policy.
+4. Update README, `.env.example`, relevant docs and CHANGELOG for public changes.
+5. Historical reports are immutable evidence; add dated reports for new live results.
 
 Run from the repository root:
 
@@ -79,10 +72,13 @@ Run from the repository root:
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 .venv/bin/mypy src
-.venv/bin/pytest --cov=codex_a2a_gateway --cov-report=term-missing
+.venv/bin/pytest --cov=hermes_a2a_gateway --cov-report=term-missing
 ```
 
-Validate a release build in a fresh output directory:
+The full coverage gate requires `HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN` pointing to
+an isolated disposable PostgreSQL 16 database. CI runs the full suite with PostgreSQL;
+macOS/Linux also run portable tests and clean-wheel installation. Do not lower the
+full-suite coverage gate merely because PostgreSQL is absent locally.
 
 ```bash
 build_dir=$(mktemp -d)
@@ -94,13 +90,20 @@ build_dir=$(mktemp -d)
 .venv/bin/python scripts/write_sha256sums.py --check "$build_dir"
 ```
 
-The clean-wheel check is required on both macOS and Linux CI. Keep deployment commands in `docs/deployment.md` installable without a Git clone, and never claim an operating system as supported until that path has passed CI or an equivalent clean-host test.
+Native protocol changes also require `scripts/check_app_server_schema.py` against
+the supported local Codex CLI. Live model tasks are opt-in, uniquely identified,
+harmless, authorized by the operator, and never run in CI. Simulated reconnect tests
+do not prove real machine sleep/wake or native Desktop consumption.
 
-For App Server protocol changes, also run `scripts/check_app_server_schema.py` against the supported local Codex CLI. A live Hermes or Codex model task requires explicit operator authorization and must use a harmless, uniquely identifiable prompt.
+## Completion and release
 
-## Definition of done
+Relevant tests, clean wheel and CI pass. The diff contains no private files, runtime
+stores, logs, credentials or stale artifacts. Documentation matches implemented limits.
+Publish immutable release assets from the exact successful main/push CI commit.
+Install and verify downloaded release artifacts on both hosts; report provenance and
+actual end-to-end evidence separately from package/transport checks.
 
-- Relevant tests and compatibility checks pass.
-- The worktree diff contains no secrets, local paths, runtime databases, logs, transcripts, or stale build artifacts.
-- Documentation and release notes match the implemented behavior and do not overstate conformance, cancellation, streaming, durability, or isolation.
-- Rollback and migration instructions preserve user data and avoid running old and new MCP registrations against the same SQLite file concurrently.
+Removal/upgrade plans identify exact owned installations, back up data and keys,
+check interpreter dependencies, stop writers before consistent copy, and preserve a
+rollback path. Do not remove Hermes, Codex, PostgreSQL, provider authentication,
+unrelated SSH tunnels, user workspaces or shared runtimes as gateway cleanup.

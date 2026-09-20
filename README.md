@@ -1,328 +1,119 @@
 # Hermes A2A Gateway
 
-> **v0.6 client/server beta:** Desktop MCP → local durable inbox → authenticated HTTPS/SSE broker → Hermes A2A. See [deployment and limitations](docs/client-server-deployment.md). Legacy local inbound/outbound modes remain available.
-
 [![CI](https://github.com/phamviet86/hermes-a2a-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/phamviet86/hermes-a2a-gateway/actions/workflows/ci.yml)
-[![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
-[![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
-
-**Prerelease beta · v0.6.0b1**
 
 English | [Tiếng Việt](README.vi.md)
 
-Hermes A2A Gateway connects Hermes with AI agents through durable A2A workflows. Codex Desktop is the first verified agent integration; adapters for other agent runtimes are not implemented yet.
+Hermes A2A Gateway connects Codex Desktop to Hermes on a private server. The client
+owns a durable local inbox and optional SSH tunnel; the broker owns a PostgreSQL
+ledger and dispatches work to the server's loopback Hermes A2A endpoint.
 
-The repository is now `hermes-a2a-gateway`. For installation compatibility, the Python distribution and command remain `codex-a2a-gateway`, the namespace remains `codex_a2a_gateway`, and existing environment variables, MCP registrations and state paths stay unchanged.
-
-- **Remote client/server beta:** five `gateway_*` MCP tools send work from Codex Desktop to Hermes on a private server and retrieve durable results.
-- **Legacy local Codex → A2A:** seven `hermes_*` MCP tools delegate to a Hermes A2A peer on the same host.
-- **A2A → Codex:** Hermes or another A2A v1.0 client calls an HTTP/SSE gateway backed by Codex App Server.
-
-The existing inbound endpoint uses portable A2A v1.0 operations and can be called by other compliant clients. This repository rename does not add native integrations for additional agents.
-
-> **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
-
-> **Version scope:** `v0.6.0b1` adds a separate PostgreSQL broker and local client daemon, encrypted expiring payloads, device-scoped replay, and a capability-checked native queue adapter for late Desktop results. This is an opt-in prerelease. Existing SQLite state and the seven `hermes_*` tools retain their contracts.
-
-## Architecture
+**Release candidate: v0.7.0rc1.** Package, command and MCP registration are now
+`hermes-a2a-gateway`. The Python namespace is `hermes_a2a_gateway` and configuration
+uses `HERMES_A2A_GATEWAY_*`. This release removes the old local gateway modes,
+legacy executable aliases, setup skills and Hermes → Codex plugin.
 
 ```text
-Desktop --MCP--> local client daemon + SQLite inbox
-                          | verified HTTPS commands / SSE
-                   broker + PostgreSQL ledger
-                          | loopback A2A
-                        Hermes
-
-Legacy: MCP serve --> local Hermes; inbound gateway --> Codex App Server
+Codex Desktop -- MCP --> client daemon + SQLite inbox
+                            | direct HTTPS or HTTPS inside owned SSH tunnel
+                       TLS proxy --> broker + PostgreSQL
+                                         | loopback A2A
+                                       Hermes
 ```
 
-The new client and broker use separate stores from the legacy gateway. The client binds an operation to trusted native MCP metadata; the broker authenticates a device token. A result received after the inline wait may enqueue a reference in the original Desktop task. Unknown queue acknowledgements remain explicit and are never blindly retried.
+This is an independent community project, not an official OpenAI or Nous Research
+product. Codex Desktop is the first verified integration; other runtime adapters
+and arbitrary Hermes-initiated Desktop jobs are not implemented.
 
-## Set up a Hermes server and a Codex client
+## Install and use
 
-Follow these Vietnamese guides in order; both machines install the same pinned release wheel without cloning the repo:
+Install the same release wheel on both machines; a Git clone is unnecessary.
+Start with the [release download/checksum instructions](docs/deployment.md#install-the-same-release-on-both-machines).
 
-| Machine | Guide | What it covers |
-| --- | --- | --- |
-| Server / VPS running Hermes | [Install and use the server](docs/server-hermes.vi.md) | Hermes A2A, PostgreSQL, broker, private TLS/SSE, device credentials and operations |
-| Workstation running Codex | [Install and use the client](docs/client-codex.vi.md) | Local daemon, automatic startup, Desktop MCP, submitting work, retrieving results and troubleshooting |
+| Machine or task | Guide |
+| --- | --- |
+| Private server running Hermes | [Server installation and operation (Vietnamese)](docs/server-hermes.vi.md) |
+| Workstation running Codex Desktop | [Client installation and five-tool usage (Vietnamese)](docs/client-codex.vi.md) |
+| Direct LAN/VPN or managed SSH connection | [SSH configuration, retries and diagnostics (Vietnamese)](docs/ssh-tunnel.vi.md) |
+| Existing v0.6 or legacy installation | [Migration, removal and rollback](docs/migration-v0.7.md) |
 
-The server hands the client its HTTPS origin, a device token and the CA certificate when needed. The broker encryption key stays on the server. See the [shared deployment reference](docs/client-server-deployment.md) for the verified release download, retention and rollback.
+Only four commands are installed:
 
-The quickstarts and setup skill below cover retained **local** modes. They do not install the new broker/client profile. The broker returns Hermes results to their originating Codex task; independent Hermes → Codex jobs use the separate inbound gateway described below.
+```text
+hermes-a2a-gateway broker
+hermes-a2a-gateway client
+hermes-a2a-gateway client-mcp
+hermes-a2a-gateway client-doctor
+```
 
-## Local-mode capabilities
-
-The list below describes the retained local gateway. For the new remote profile, use the five `gateway_*` tools in the [client guide](docs/client-codex.vi.md#6-sử-dụng-hằng-ngày).
-
-- A2A v1 Agent Card and JSON-RPC `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, and `CancelTask`.
-- SSE lifecycle streaming with task, status, and artifact updates.
-- Durable context, task, message, thread, and turn correlation in local SQLite.
-- Local idempotency and conservative recovery after ambiguous outbound timeouts.
-- App Server approval and user-input requests mapped to `TASK_STATE_INPUT_REQUIRED`.
-- Loopback defaults, bearer authentication for non-loopback inbound exposure, request limits, and bounded admission.
-- Explicit CLI compatibility backend using `codex exec --json`.
-- Bundled Hermes `codex_a2a` plugin for durable Hermes → Codex task handles, polling, recovery, cancellation, and `INPUT_REQUIRED` continuation.
-
-Known limitations:
-
-- Inbound requests support text parts only.
-- No inbound push-notification CRUD or webhook delivery; the Agent Card advertises `pushNotifications: false`.
-- Streaming uses A2A lifecycle/artifact events; inbound artifact deltas may be incremental, but token boundaries are not guaranteed.
-- Cancellation is best-effort and never proves that upstream computation stopped.
-- Hermes task storage is currently in memory; the gateway uses conservative local recovery after a Hermes restart.
-- One active writer/process set should own a SQLite state file. This is a local single-user integration, not a multi-tenant isolation boundary.
-- The built-in Hermes `a2a_call` is synchronous. Use the bundled `codex_a2a` plugin for reliable long-running Hermes → Codex work; it submits with `returnImmediately` and never blindly resends after a timeout.
-
-## Compatibility
-
-| Component | Supported/tested |
-|---|---|
-| Python | CPython `>=3.11,<3.12` |
-| A2A | v1.0 JSON-RPC and SSE |
-| Codex | App Server over stdio by default; CLI fallback is explicit |
-| Hermes Agent | Live-tested with `0.20.6` on macOS |
-| MCP | Local stdio server |
-
-The release wheel and clean-install path are tested in CI on macOS and Linux. Windows/WSL is not yet verified. See [deploying on another computer](docs/deployment.md) for the exact support boundary.
-
-The App Server backend follows the official [Codex App Server protocol](https://learn.chatgpt.com/docs/app-server): initialize once, start or resume a thread, start a turn, and consume streamed notifications. WebSocket App Server transport is not used by this project.
-
-## Install local modes with your agent
-
-Give your agent this request:
-
-> Install Codex A2A Gateway v0.6.0b1 from its release wheel into a dedicated Python 3.11 environment, install its skills, then use `codex-a2a-setup` to configure this machine. Reuse existing credentials and settings; ask only for required missing values such as direction and inbound workspace. Verify the selected transport and client tool discovery.
-
-The agent can install without cloning the repository:
+Configure the private client launcher as documented, then register its MCP facade:
 
 ```bash
-python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
-"$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
-"$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
+codex mcp add hermes-a2a-gateway -- \
+  "$HOME/.config/hermes-a2a-gateway/launch" client-mcp
+codex mcp get hermes-a2a-gateway
 ```
 
-The setup skill configures and verifies the selected `outbound`, `inbound`, or `both` direction; `codex-a2a` teaches normal tool use and durable task retrieval. Inbound needs an explicit workspace; generic inbound clients do not need Hermes. Skill installation alone does not change MCP registrations or start services. See [agent-led setup](docs/agent-setup.md) for installation checks, persistent configuration and the worker/RAG visibility boundary.
+Set `tool_timeout_sec = 90` in the existing `[mcp_servers.hermes-a2a-gateway]`
+Codex configuration table, as shown in the [client guide](docs/client-codex.vi.md).
 
-See the complete [deployment guide](docs/deployment.md) for prerequisites, MCP registration, Hermes setup, state migration, upgrades, rollback, and uninstall. For a guided Vietnamese setup of both Codex and Hermes directions, see [Thiết lập Codex + Hermes](docs/setup-codex-hermes.vi.md).
+The daemon must be running before using tools. SSH belongs to the daemon, not to
+individual MCP calls or Desktop tasks. Server credentials and encryption keys stay
+in protected configuration, outside MCP arguments.
 
-For a source checkout or contributor environment:
+| MCP tool | Purpose |
+| --- | --- |
+| `gateway_submit` | Submit once and return an operation handle; explicit wait 0–60 seconds |
+| `gateway_get` | Retrieve an existing operation/result in its originating Desktop task |
+| `gateway_wait` | Wait up to 60 seconds on the same operation without resubmitting |
+| `gateway_cancel` | Request best-effort cancellation |
+| `gateway_upload_artifact` | Upload an explicitly selected regular file |
+
+For long work, submit with `wait_seconds: 0`, keep `operation_id`, and get/wait on
+that handle. Explicit waits such as `20` are valid even when the configured default
+is `15`. Only UTF-8 `text/plain` attachments are passed to Hermes in this profile;
+local repository files are not automatically synchronized.
+
+## Durability and limits
+
+- TLS verification, device bearer authentication and loopback Hermes are required
+  for remote deployment. SSH mode additionally verifies host keys and binds its
+  local forward to loopback. It never disables HTTPS to recover from an error.
+- Network reconnect uses bounded retries. SSE resumes from a persisted cursor and
+  operations are reconciled by exact identities. An ambiguous Hermes mutation or
+  native queue insertion is never blindly repeated.
+- A late result may queue a reference in its original Desktop task. Queue ACK is
+  not proof of consumption. Offline/unloaded-host wake is not guaranteed; use
+  `gateway_get`/`gateway_wait` when necessary.
+- One owner, separately authorized devices, one broker dispatcher, one daemon per
+  inbox. This is not a public multi-tenant service or an HA cluster.
+- Payloads are encrypted with external keys and expire. Default payload/artifact TTL
+  is one day; result/event retention is seven days. Keep backups and keys together
+  under a separate retention policy. Do not replace an existing encryption key.
+- Cancellation is best-effort. Human-input continuation through the broker is not
+  implemented. Native delivery is version/schema gated.
+- CPython 3.11 and clean wheels are tested on macOS/Linux. The Unix-socket client
+  does not support Windows. Native Desktop behavior must be verified separately
+  from package installation or simulated reconnect tests.
+
+See the [wire contract](docs/client-server-contract.md), [deployment reference](docs/deployment.md),
+[release notes](docs/release-notes.md), and [historical evidence](docs/history/README.md).
+
+## Development
 
 ```bash
 git clone https://github.com/phamviet86/hermes-a2a-gateway.git
 cd hermes-a2a-gateway
 python3.11 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/codex-a2a-gateway --help
-```
-
-Contributors should install development tools with:
-
-```bash
 .venv/bin/python -m pip install -e '.[dev]'
-```
-
-## Quickstart 1: Codex → Hermes
-
-These quickstarts assume the release-wheel installation above. Define the installed paths once in each shell:
-
-```bash
-gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
-gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
-```
-
-For a source checkout, use its `.venv/bin/codex-a2a-gateway` explicitly instead; do not mix the two installations against one state file.
-
-Enable the native Hermes A2A platform using the current [Hermes A2A guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a):
-
-```bash
-hermes gateway setup   # select A2A when prompted
-hermes gateway run     # foreground process on 127.0.0.1:9900
-```
-
-In another terminal, verify the peer and register the MCP server:
-
-```bash
-"$gateway_bin" doctor
-
-codex mcp add codex-a2a-gateway -- \
-  "$gateway_bin" serve
-codex mcp get codex-a2a-gateway
-```
-
-Restart or open a new Codex client so it loads the MCP entry. A typical agent workflow is:
-
-1. Call `hermes_status`.
-2. Call `hermes_chat` with a stable `conversation_key`.
-3. If the task is still active, call `hermes_task_wait` or `hermes_task_get` instead of resending it.
-4. Continue the conversation with the same `conversation_key` or returned `context_id`.
-
-The MCP stdio process writes protocol frames to stdout and diagnostics to stderr.
-
-## Quickstart 2: Hermes or A2A → Codex
-
-Start the inbound gateway against the workspace Codex should operate on:
-
-```bash
-CODEX_WORKSPACE_ROOT=/absolute/path/to/workspace \
-  "$gateway_bin" gateway
-```
-
-Confirm discovery:
-
-```bash
-curl --fail http://127.0.0.1:9910/.well-known/agent-card.json
-```
-
-Send one harmless A2A task:
-
-```bash
-curl --fail-with-body http://127.0.0.1:9910/ \
-  -H 'Content-Type: application/json' \
-  -H 'A2A-Version: 1.0' \
-  -d '{"jsonrpc":"2.0","id":"quickstart-1","method":"SendMessage","params":{"message":{"messageId":"quickstart-message-1","role":"ROLE_USER","parts":[{"text":"Reply with exactly CODEX_A2A_OK"}]}}}'
-```
-
-To let Hermes call Codex using Hermes' native outbound A2A tools:
-
-```bash
-hermes tools enable a2a --platform cli
-```
-
-### Durable Hermes client
-
-The `v0.6.0b1` wheel ships this plugin. Enable only its dedicated CLI toolset:
-
-```bash
-gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
-gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
-test -x "$gateway_bin"
-"$gateway_bin" install-hermes-plugin
-hermes plugins enable codex-a2a-gateway
-hermes tools enable codex_a2a --platform cli
-hermes config set plugins.entries.codex-a2a-gateway.settings.endpoint http://127.0.0.1:9910
-hermes config set plugins.entries.codex-a2a-gateway.settings.timeout 30
-```
-
-The plugin provides `codex_a2a_call`, `codex_a2a_get`, `codex_a2a_wait`, `codex_a2a_list`, and `codex_a2a_cancel`. It persists handle metadata only—not Codex results or artifacts—submits with `returnImmediately: true`, and marks an ambiguous timeout as `outcome_unknown`. Recovery requires the saved `requestMessageId` to match exactly and exactly one unbound `ListTasks(contextId)` candidate; otherwise it remains unknown. It is loopback-only.
-
-The plugin reads `plugins.entries.codex-a2a-gateway.settings.endpoint` and `.timeout`; it does not read the native `a2a_agents` peer map. Set its endpoint explicitly when the gateway uses a non-default loopback port.
-
-The installer writes to `$HERMES_HOME/plugins/codex-a2a-gateway` (or `~/.hermes/plugins/codex-a2a-gateway` when `HERMES_HOME` is unset). To answer `TASK_STATE_INPUT_REQUIRED`, call `codex_a2a_call` again with the same local `task_id`/handle and a new message; it reuses the remote task and rejects changed model/reasoning preferences. Do not invoke two plugin calls for the same handle concurrently.
-
-Add a peer to `~/.hermes/config.yaml`:
-
-```yaml
-a2a_agents:
-  codex:
-    url: "http://127.0.0.1:9910"
-    timeout: 300
-```
-
-Do not enable `a2a` tools on the inbound Hermes `a2a` platform unless agent chaining is intentional; both systems have anti-loop limits, but an explicit topology is safer.
-
-### Inbound execution preferences
-
-Only Hermes/A2A → Codex may opt into the advertised execution-preferences extension. The bundled plugin fetches the loopback Agent Card first and sends no preference request unless that exact URI is advertised. The sender must advertise the extension URI in the `A2A-Extensions` HTTP header and `message.extensions`, then place `model`, `reasoning_effort`, and optional `require_exact` in `message.metadata.executionPreferences`. The gateway queries Codex App Server `model/list`, applies receiver policy, persists the requested/effective decision, and starts the turn using App Server `model` and `effort`. `require_exact: true` rejects an unavailable value; otherwise the receiver may deterministically choose its default/fallback and reports that decision in task metadata. The CLI backend rejects this extension rather than pretending to honor it. Codex → Hermes MCP tools do not accept these preferences. See the [versioned extension contract](docs/execution-preferences-extension-v1.md).
-
-## Sessions and tasks
-
-Outbound calls map a stable Codex `conversation_key` to a Hermes A2A `contextId`. Inbound calls map an A2A `contextId` and task to a Codex App Server thread and turn. Follow-up messages reuse these mappings, and task status remains queryable through SQLite across gateway restarts.
-
-For a mutating outbound request, provide an `idempotency_key`. If a network timeout leaves the result ambiguous, query or wait on the existing task. The gateway deliberately does not blindly resend.
-
-See [architecture v0.2](docs/architecture-v0.2.md), the [inbound operations guide](docs/inbound-gateway.md), and the runnable generic-client lifecycle in the [deployment guide](docs/deployment.md#5-generic-a2a-client-lifecycle).
-
-## Outbound MCP tools
-
-| Tool | Purpose |
-|---|---|
-| `hermes_status` | Check persistence, Hermes health, and Agent Card discovery. |
-| `hermes_chat` | Start or continue a conversation in `auto`, `sync`, or `async` mode. |
-| `hermes_task_get` | Reconcile and return task state, result, error, or input request. |
-| `hermes_tasks_list` | List durable tasks by conversation and state. |
-| `hermes_task_wait` | Wait through active SSE, subscription, then polling fallback. |
-| `hermes_task_cancel` | Request best-effort cancellation. |
-| `hermes_contexts` | List, inspect, or close local context mappings. |
-
-These tools expose conversation and task operations only. They do not expose Hermes administration, shell, plugin, model, or service controls.
-
-## Configuration
-
-Safety-critical settings:
-
-| Variable | Default | Purpose |
-|---|---:|---|
-| `HERMES_A2A_ENDPOINT` | `http://127.0.0.1:9900` | Outbound Hermes A2A root; loopback only. |
-| `HERMES_A2A_TOKEN` | empty | Optional outbound bearer token, read from env only. |
-| `CODEX_A2A_GATEWAY_STATE_PATH` | platform state directory | SQLite file; mode `0600`. |
-| `CODEX_A2A_GATEWAY_MAX_TURNS` | `5` | Per-context anti-loop budget. |
-| `CODEX_A2A_GATEWAY_MAX_CONCURRENCY` | `4` | Per-process execution limit. The MCP adapter and inbound gateway are separate processes, so this is not a global cap across both. |
-| `CODEX_A2A_HOST` / `CODEX_A2A_PORT` | `127.0.0.1` / `9910` | Inbound bind. |
-| `CODEX_A2A_BEARER_TOKEN` | empty | Required before a non-loopback bind/public URL. |
-| `CODEX_A2A_GATEWAY_BACKEND` | `app-server` | `app-server` or explicit `cli`. |
-| `CODEX_A2A_GATEWAY_CLI_FALLBACK` | `false` | Limited fallback for a new context only. |
-| `CODEX_WORKSPACE_ROOT` | current directory | Workspace used by Codex. |
-| `CODEX_A2A_GATEWAY_APPROVAL_POLICY` | `never` | `never`, `untrusted`, or `on-request`. |
-
-See [.env.example](.env.example) for the complete operator surface. Legacy `HERMES_BRIDGE_*` and `CODEX_BRIDGE_*` variables remain lower-priority compatibility aliases for v0.2. The legacy executable `codex-hermes-a2a-bridge` also remains as a temporary alias.
-
-## Security and privacy
-
-- Outbound URLs and discovered interfaces must remain loopback-only and redirects are not followed.
-- A non-loopback inbound host or public URL requires a bearer token; use TLS at a trusted reverse proxy for any remote deployment.
-- Tokens are read from environment variables and compared without writing them to logs.
-- The legacy local adapter does not store original outbound prompts. The opt-in v0.6 client/broker stores encrypted prompts with an explicit TTL for durable dispatch. Results, artifacts, mappings and status can also be sensitive; keep stores and environment keys private with a matching backup retention policy.
-- Codex and Hermes can maintain their own session, audit, and conversation records.
-- Never publish tokens, transcripts, SQLite files, or private workspace paths in issues.
-
-Report vulnerabilities through GitHub private vulnerability reporting as described in [SECURITY.md](SECURITY.md).
-
-## Development and verification
-
-```bash
 .venv/bin/python -m compileall -q src tests scripts
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 .venv/bin/mypy src
-.venv/bin/pytest --cov=codex_a2a_gateway --cov-report=term-missing
+# Set HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN to a disposable PostgreSQL 16 database.
+.venv/bin/pytest --cov=hermes_a2a_gateway --cov-report=term-missing
 ```
 
-Default tests use an ephemeral fake A2A server and do not require Hermes or a live model. `doctor` is read-only; `smoke` sends a real Hermes task and must be run intentionally with harmless content.
-
-Current release evidence is in [v0.6.0b1 validation](docs/testing-report-v0.6.0b1.md); [v0.4.0 live validation](docs/testing-report-v0.4.0.md) remains historical evidence for the inherited durability contract. Coding agents must also follow [AGENTS.md](AGENTS.md).
-
-## Migration from the old name
-
-Install the renamed project, add the new MCP entry, verify it, then remove the old entry. Do not leave both active against the same state database.
-
-```bash
-.venv/bin/python -m pip install -e .
-codex mcp add codex-a2a-gateway -- \
-  /absolute/path/to/codex-a2a-gateway/.venv/bin/codex-a2a-gateway serve
-codex mcp get codex-a2a-gateway
-codex mcp remove codex-hermes-a2a-bridge
-```
-
-The gateway uses the old state file automatically when it exists and the new default file has not been created. It never silently moves or deletes that data.
-
-## Documentation
-
-- [Vietnamese README](README.vi.md)
-- [Hermes server installation and usage (Vietnamese)](docs/server-hermes.vi.md)
-- [Codex client installation and usage (Vietnamese)](docs/client-codex.vi.md)
-- [Vietnamese local Codex + Hermes setup](docs/setup-codex-hermes.vi.md)
-- [Vietnamese roadmap and feasibility](docs/roadmap.vi.md)
-- [Deploy on another computer](docs/deployment.md)
-- [Architecture v0.2](docs/architecture-v0.2.md)
-- [Inbound gateway operations](docs/inbound-gateway.md)
-- [Hermes A2A reference](docs/hermes-a2a-reference.md)
-- [Testing report v0.2](docs/testing-report-v0.2.md)
-- [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [Apache License 2.0](LICENSE)
-
-Primary references: [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [Hermes A2A](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a), and the [A2A protocol](https://a2a-protocol.org/).
+Tests use fake peers; live model tasks are opt-in and never run in CI. See
+[AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md),
+and [SECURITY.md](SECURITY.md). Licensed under [Apache-2.0](LICENSE).

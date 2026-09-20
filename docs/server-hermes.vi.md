@@ -2,37 +2,22 @@
 
 Tài liệu này dành cho người vận hành một máy chủ riêng chạy Hermes và một hoặc
 nhiều máy Codex Desktop. Nó triển khai nhánh **Codex → Hermes → trả kết quả về
-Codex** của beta `v0.6.0b1`:
+Codex** của beta `v0.7.0rc1`:
 
 ```text
 Codex Desktop → client daemon → HTTPS riêng → broker → Hermes A2A loopback
                                       PostgreSQL 16
 ```
 
-Tên sản phẩm là **Hermes A2A Gateway**, nhưng tên gói, lệnh và biến môi trường
-vẫn là `codex-a2a-gateway` và `CODEX_A2A_GATEWAY_*`. Đây là một broker duy nhất
-cho một người sở hữu và các thiết bị đã cấp quyền; không phải proxy URL tùy ý,
-dịch vụ công cộng nhiều tenant, hay cụm HA.
+Tên package/lệnh là **`hermes-a2a-gateway`**, biến môi trường dùng
+`HERMES_A2A_GATEWAY_*`. Đây là một broker cho một người sở hữu và các thiết bị
+được cấp quyền. Làm [hướng dẫn client](client-codex.vi.md) trên máy Codex sau
+khi server sẵn sàng; hai phía cài cùng wheel theo [hướng dẫn cài chung](deployment.md#install-the-same-release-on-both-machines).
 
-Hướng dẫn phía máy Codex là [Cài đặt Codex client](client-codex.vi.md). Hai phía
-cùng dùng đúng wheel `v0.6.0b1` và cách kiểm tra checksum SHA256 trong
-[triển khai client/server](client-server-deployment.md#install-the-same-release-on-both-machines).
-Không cài wheel vào môi trường Python của Hermes hoặc môi trường gateway/SQLite
-cũ.
-
-## Phân biệt hai hướng A2A
-
-Broker trong tài liệu này nhận một operation đã được client Codex ghi bền, gửi
-nó tới Hermes A2A cục bộ và lưu/trả kết quả theo operation ID. Prompt và file
-đính kèm có TTL được mã hóa trong PostgreSQL của broker. Kết quả muộn được
-client lấy bằng handle chính xác; broker không chèn prompt hay kết quả trực tiếp
-vào Desktop.
-
-Nó không phải plugin Hermes `codex_a2a` cho hướng **Hermes → Codex**. Plugin
-đó, bảy tool `hermes_*`, SQLite cũ, inbound Codex gateway và các registration
-cũ vẫn là các profile riêng. Đừng cho hai profile dùng chung state hoặc thay
-registration cũ chỉ vì đã cài broker. Khả năng nhận kết quả muộn phụ thuộc host
-Desktop; không có bảo đảm wake khi offline hay delivery exactly-once.
+Bản v0.7 chỉ giữ client/server. Gateway inbound Codex, bảy tool `hermes_*`, plugin
+Hermes `codex_a2a` và bộ cài legacy đã được gỡ khỏi sản phẩm. Khi nâng cấp, làm
+[di trú và dọn cài đặt cũ](migration-v0.7.md), giữ dữ liệu/khóa của broker hiện tại.
+SSH tunnel là tùy chọn phía client; broker và Hermes tiếp tục dùng cùng HTTPS/A2A.
 
 ## Điều kiện trước khi thay đổi
 
@@ -41,8 +26,8 @@ Chuẩn bị trước:
 - Một Hermes đang hoạt động dưới một tài khoản Unix riêng, với A2A nội bộ đã xác
   thực và chỉ nghe `127.0.0.1:9900`.
 - PostgreSQL 16 trên cùng máy, một database riêng cho broker.
-- CPython 3.11 và wheel `v0.6.0b1` đã được xác minh theo
-  [hướng dẫn cài chung](client-server-deployment.md#install-the-same-release-on-both-machines).
+- CPython 3.11 và wheel `v0.7.0rc1` đã được xác minh theo
+  [hướng dẫn cài chung](deployment.md#install-the-same-release-on-both-machines).
 - DNS/private VPN và một reverse proxy TLS có CA được máy Codex tin cậy.
 
 ### Nếu đây là máy Hermes mới
@@ -201,15 +186,15 @@ và ổn định.
 
 ```bash
 umask 077
-install -d -m 0700 "$HOME/.config/codex-a2a-v06"
-"$HOME/.local/share/codex-a2a-v06/venv/bin/python" - <<'PYTHON'
+install -d -m 0700 "$HOME/.config/hermes-a2a-gateway"
+"$HOME/.local/share/hermes-a2a-gateway/venv/bin/python" - <<'PYTHON'
 import os
 import secrets
 from pathlib import Path
 from cryptography.fernet import Fernet
 
 os.umask(0o077)
-base = Path.home() / ".config/codex-a2a-v06"
+base = Path.home() / ".config/hermes-a2a-gateway"
 device_id = "workstation-01"
 key_file = base / "broker-fernet.key"
 token_file = base / f"{device_id}.device.token"
@@ -231,18 +216,18 @@ dùng placeholder trong deployment thật. Mỗi token phải khác nhau và ít
 ký tự.
 
 ```dotenv
-CODEX_A2A_GATEWAY_BROKER_DATABASE_URL=postgresql:///hermes_a2a_broker?host=/var/run/postgresql
-CODEX_A2A_GATEWAY_BROKER_DEVICE_TOKENS='{"workstation-01":"TOKEN_RIENG_CUA_DEVICE"}'
-CODEX_A2A_GATEWAY_BROKER_ENCRYPTION_KEY=FERNET_KEY_RIENG_CUA_BROKER
-CODEX_A2A_GATEWAY_BROKER_PUBLIC_URL=https://gateway.example.internal:9443
-CODEX_A2A_GATEWAY_BROKER_HOST=127.0.0.1
-CODEX_A2A_GATEWAY_BROKER_PORT=8790
+HERMES_A2A_GATEWAY_BROKER_DATABASE_URL=postgresql:///hermes_a2a_broker?host=/var/run/postgresql
+HERMES_A2A_GATEWAY_BROKER_DEVICE_TOKENS='{"workstation-01":"TOKEN_RIENG_CUA_DEVICE"}'
+HERMES_A2A_GATEWAY_BROKER_ENCRYPTION_KEY=FERNET_KEY_RIENG_CUA_BROKER
+HERMES_A2A_GATEWAY_BROKER_PUBLIC_URL=https://gateway.example.internal:9443
+HERMES_A2A_GATEWAY_BROKER_HOST=127.0.0.1
+HERMES_A2A_GATEWAY_BROKER_PORT=8790
 HERMES_A2A_ENDPOINT=http://127.0.0.1:9900
 HERMES_A2A_TOKEN=TOKEN_CUA_IDENTITY_codex-broker
 
 # Chọn có chủ đích cho tải công việc; các giá trị dưới đây là mặc định beta.
-CODEX_A2A_GATEWAY_BROKER_PEER_TIMEOUT_SECONDS=300
-CODEX_A2A_GATEWAY_BROKER_MAX_CONCURRENT_STREAMS=4
+HERMES_A2A_GATEWAY_BROKER_PEER_TIMEOUT_SECONDS=300
+HERMES_A2A_GATEWAY_BROKER_MAX_CONCURRENT_STREAMS=4
 ```
 
 `BROKER_PUBLIC_URL` phải là HTTPS origin không có path/query/credential. Chỉ
@@ -267,15 +252,15 @@ cũng sẽ từ chối dispatcher thứ hai. Ví dụ này không chỉnh servic
 dịch vụ cũ.
 
 ```ini
-# ~/.config/systemd/user/codex-a2a-broker.service
+# ~/.config/systemd/user/hermes-a2a-gateway-broker.service
 [Unit]
-Description=Hermes A2A Gateway v0.6 broker
+Description=Hermes A2A Gateway v0.7 broker
 After=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/codex-a2a-v06/broker.env
-ExecStart=%h/.local/share/codex-a2a-v06/venv/bin/codex-a2a-gateway broker
+EnvironmentFile=%h/.config/hermes-a2a-gateway/broker.env
+ExecStart=%h/.local/share/hermes-a2a-gateway/venv/bin/hermes-a2a-gateway broker
 Restart=on-failure
 RestartSec=5
 UMask=0077
@@ -289,8 +274,8 @@ Chỉ khi đường dẫn, user và `broker.env` đã được kiểm tra, nạp
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now codex-a2a-broker.service
-systemctl --user status --no-pager codex-a2a-broker.service
+systemctl --user enable --now hermes-a2a-gateway-broker.service
+systemctl --user status --no-pager hermes-a2a-gateway-broker.service
 curl --fail --silent --show-error http://127.0.0.1:8790/healthz
 ```
 
@@ -358,16 +343,16 @@ Tạo một token khác cho từng device và thêm một entry mới vào JSON
 `BROKER_DEVICE_TOKENS`; sau đó restart broker trong cửa sổ bảo trì ngắn và xác
 nhận `/healthz`. Chỉ gửi qua kênh quản trị đã xác thực:
 
-1. `CODEX_A2A_GATEWAY_CLIENT_BROKER_URL` — HTTPS origin, ví dụ
+1. `HERMES_A2A_GATEWAY_CLIENT_BROKER_URL` — HTTPS origin, ví dụ
    `https://gateway.example.internal:9443`.
 2. CA certificate/chain để client đặt vào
-   `CODEX_A2A_GATEWAY_CLIENT_CA_FILE`, nếu CA không có sẵn trong trust store.
-3. `CODEX_A2A_GATEWAY_CLIENT_TOKEN` của **chính device đó**.
+   `HERMES_A2A_GATEWAY_CLIENT_CA_FILE`, nếu CA không có sẵn trong trust store.
+3. `HERMES_A2A_GATEWAY_CLIENT_TOKEN` của **chính device đó**.
 
 Token là đúng một dòng; khi bàn giao, người vận hành phía client lưu nó thành
-`~/.config/codex-a2a-v06/device.token` mode `0600`, đúng tên mà hướng dẫn client
+`~/.config/hermes-a2a-gateway/device.token` mode `0600`, đúng tên mà hướng dẫn client
 sử dụng. Tệp nguồn trên server, ví dụ
-`$HOME/.config/codex-a2a-v06/workstation-01.device.token`, chỉ là bản private
+`$HOME/.config/hermes-a2a-gateway/workstation-01.device.token`, chỉ là bản private
 để quản trị/revoke và không được mount hoặc đồng bộ sang client.
 
 Không gửi PostgreSQL DSN, Fernet key broker, `HERMES_A2A_TOKEN`, tệp
@@ -380,9 +365,9 @@ SQLite state riêng. Token client không thay thế token giữa broker và Herm
 Theo dõi service và readiness mà không in environment hoặc request body:
 
 ```bash
-systemctl --user is-active codex-a2a-broker.service
-systemctl --user status --no-pager codex-a2a-broker.service
-journalctl --user -u codex-a2a-broker.service --since '1 hour ago' --no-pager
+systemctl --user is-active hermes-a2a-gateway-broker.service
+systemctl --user status --no-pager hermes-a2a-gateway-broker.service
+journalctl --user -u hermes-a2a-gateway-broker.service --since '1 hour ago' --no-pager
 curl --fail --silent http://127.0.0.1:8790/healthz
 ```
 
@@ -402,7 +387,7 @@ có remote task ID chính xác, trạng thái phải giữ `outcome_unknown`; kh
 prompt. Với remote task ID đã lưu, broker chỉ đối soát bằng exact GET.
 
 `gateway_cancel` là best effort. Nó yêu cầu hủy ở Hermes khi có handle, nhưng
-không chứng minh model đã dừng. Broker shutdown chỉ có tối đa năm giây để drain
+không chứng minh model đã dừng. Broker shutdown có ngân sách năm giây để drain
 HTTP/SSE rồi hủy connections; điều đó không phải hủy upstream. Lên lịch nâng cấp
 vào lúc không có job dài, đặc biệt khi tăng/giảm `PEER_TIMEOUT_SECONDS`.
 
@@ -415,10 +400,10 @@ xem ví dụ upload và bài kiểm tra đầu cuối trong [hướng dẫn clie
 
 ## Nguồn và giới hạn đã xác minh
 
-- [Contract client/server v0.6](client-server-v0.6-contract.md) định nghĩa API,
+- [Contract client/server v0.7](client-server-contract.md) định nghĩa API,
   operation states, recovery và native delivery; `outcome_unknown` không phải
   kết quả cuối cùng.
-- [Triển khai v0.6](client-server-deployment.md) là nguồn cài wheel, retention,
+- [Triển khai v0.7](deployment.md) là nguồn cài wheel, retention,
   systemd, TLS và giới hạn vận hành của release này.
 - [Hermes A2A plugin README](https://github.com/NousResearch/hermes-agent/blob/main/plugins/platforms/a2a/README.md)
   và [hướng dẫn A2A của Hermes](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/messaging/a2a.md)

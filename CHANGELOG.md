@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.7.0rc1 — 2026-09-21
 
-- Add Vietnamese server/Hermes and client/Codex deployment and usage guides, including private credential handoff, persistent services, MCP registration, result recovery and troubleshooting. Separate the v0.6 remote profile from legacy local quickstarts and make the shared fresh-install download stop on verification failures.
-
-- Rename the repository and product to `hermes-a2a-gateway` / Hermes A2A Gateway, with Codex Desktop as the first verified agent integration.
-- Update current installation links, project metadata and release repository checks. Preserve package/CLI names, Python namespace, environment variables, MCP registrations, state paths, protocol extension identifiers and published release assets.
+- Rename package, command and MCP registration to `hermes-a2a-gateway`, Python namespace to `hermes_a2a_gateway`, and configuration prefix to `HERMES_A2A_GATEWAY_*`.
+- Remove legacy local MCP/inbound gateway modes, Codex CLI backend, old executable aliases, setup skills and bundled Hermes → Codex plugin. Keep historical evidence separately from current installation guides.
+- Add optional daemon-owned SSH tunneling with strict host keys, verified HTTPS, device authentication, reconnect backoff and transport diagnostics. MCP tasks share the daemon and its single tunnel.
+- Accept explicit submit waits from 0 to 60 seconds independently of the 15-second default. Report safe validation errors before creating an operation.
+- Preserve existing modern inbox/ledger identities and encryption keys during stopped-writer migration. Document backup, cleanup and rollback without uninstalling actual Hermes/Codex/shared dependencies.
 
 ## 0.6.0b1 — 2026-09-21
 
