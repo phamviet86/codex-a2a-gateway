@@ -1,6 +1,6 @@
 """Broker tests use real PostgreSQL only; no SQLite durability substitutes.
 
-Set CODEX_A2A_GATEWAY_TEST_POSTGRES_DSN to a disposable database. Every test owns
+Set HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN to a disposable database. Every test owns
 an isolated schema and drops only that schema; no Hermes/model task is executed.
 """
 
@@ -29,13 +29,13 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from starlette.applications import Starlette
 
-from codex_a2a_gateway.a2a import A2AClient
-from codex_a2a_gateway.broker import BrokerDispatcher, create_broker_app
-from codex_a2a_gateway.broker_peer import HermesBrokerPeer, peer_context
-from codex_a2a_gateway.broker_settings import BrokerSettings
-from codex_a2a_gateway.broker_store import BrokerError, BrokerStore, canonical, utcnow
-from codex_a2a_gateway.models import A2ATaskResult
-from codex_a2a_gateway.settings import Settings
+from hermes_a2a_gateway.a2a import A2AClient
+from hermes_a2a_gateway.broker import BrokerDispatcher, create_broker_app
+from hermes_a2a_gateway.broker_peer import HermesBrokerPeer, peer_context
+from hermes_a2a_gateway.broker_settings import BrokerSettings
+from hermes_a2a_gateway.broker_store import BrokerError, BrokerStore, canonical, utcnow
+from hermes_a2a_gateway.models import A2ATaskResult
+from hermes_a2a_gateway.settings import Settings
 
 TOKEN_A = "a" * 40
 TOKEN_B = "b" * 40
@@ -43,9 +43,9 @@ TOKEN_B = "b" * 40
 
 @pytest.fixture
 def broker_settings() -> Iterator[BrokerSettings]:
-    dsn = os.environ.get("CODEX_A2A_GATEWAY_TEST_POSTGRES_DSN")
+    dsn = os.environ.get("HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN")
     if not dsn:
-        pytest.skip("real PostgreSQL requires CODEX_A2A_GATEWAY_TEST_POSTGRES_DSN")
+        pytest.skip("real PostgreSQL requires HERMES_A2A_GATEWAY_TEST_POSTGRES_DSN")
     schema = "broker_test_" + uuid.uuid4().hex
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
@@ -938,8 +938,8 @@ async def test_sigterm_with_open_sse_exits_bounded_and_releases_dispatcher_lock(
     # with a harmless peer that holds an active stream until process shutdown.
     script = """
 import asyncio
-import codex_a2a_gateway.broker as broker
-from codex_a2a_gateway.models import A2ATaskResult
+import hermes_a2a_gateway.broker as broker
+from hermes_a2a_gateway.models import A2ATaskResult
 class HeldPeer:
     async def submit(self, claim, timeout):
         yield A2ATaskResult(task_id="held-shutdown-task", context_id="synthetic",
@@ -958,8 +958,8 @@ broker.run_broker()
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("CODEX_A2A_GATEWAY_BROKER_")}
-    prefix = "CODEX_A2A_GATEWAY_BROKER_"
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("HERMES_A2A_GATEWAY_BROKER_")}
+    prefix = "HERMES_A2A_GATEWAY_BROKER_"
     environment.update(
         {
             prefix + key: value

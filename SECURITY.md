@@ -3,33 +3,50 @@
 ## Supported versions
 
 | Version | Security fixes |
-|---|---|
-| 0.6.0b1 | Bản prerelease hiện tại; báo lỗi kèm đúng phiên bản |
-| 0.5.1 | Bản local ổn định gần nhất trong giai đoạn chuyển đổi |
-| < 0.5.1 | Nâng cấp trước khi đối chiếu lỗi đã sửa |
+| --- | --- |
+| 0.7.0rc1 | Current candidate; report the exact installed version and transport mode |
+| 0.6 / 0.5 and older | Retired runtime; follow the v0.7 migration guide |
 
-## Báo cáo lỗ hổng
+## Reporting a vulnerability
 
-Không đăng token, prompt riêng tư, transcript hoặc chi tiết khai thác nhạy cảm trong issue công khai. Hãy dùng GitHub **Report a vulnerability** của repository; private vulnerability reporting đã được bật cho project này.
+Do not post tokens, private prompts, transcripts or sensitive exploit details in
+public issues. Use the repository's GitHub **Report a vulnerability** entry.
 
 ## Security boundary
 
-Outbound vẫn chỉ chấp nhận Hermes endpoint loopback, không follow redirect và không nhận bearer token qua tool arguments. Inbound gateway mặc định bind `127.0.0.1`; bind non-loopback bị từ chối nếu không có `CODEX_A2A_BEARER_TOKEN`. RPC bắt buộc JSON, kiểm tra Host/Origin/Sec-Fetch-Site để giảm DNS-rebinding/cross-site localhost abuse, giới hạn body khi đọc từng chunk và chặn admission trước khi tạo task. Token chỉ đọc từ env, được compare constant-time và không ghi log.
+The broker authenticates each device before operation, event, receipt or artifact
+access. Workstations use verified HTTPS, including when connected through SSH.
+Hermes A2A stays loopback-only on the server; no model-provided URL or credential
+is accepted. PostgreSQL stays private. The client Unix socket and state belong to
+one OS account; they are not a sandbox against another process using that account.
+Native MCP metadata binds a result to its originating task and never replaces
+server-side device authentication.
 
-Adapter local cũ không persist prompt gốc nhưng lưu fingerprint, mapping, trạng thái, kết quả/artifact và lỗi tối thiểu trong SQLite local; các nội dung kết quả có thể nhạy cảm. Codex và Hermes cũng có thể ghi session/conversation riêng. Người vận hành chịu trách nhiệm về quyền file, retention và backup.
+The daemon's optional OpenSSH process uses strict known-host verification,
+noninteractive authentication and one loopback forward. Connection configuration
+is trusted operator input. Host-key/authentication/configuration errors fail
+closed; the daemon does not disable TLS, adopt an unknown listener, or kill an
+unrelated SSH connection to recover.
 
-Client/server v0.6 dùng PostgreSQL riêng trên server và SQLite riêng trên client.
-Prompt chờ dispatch được mã hóa bằng khóa môi trường và xóa theo TTL; đây là thay
-đổi có chủ đích so với adapter local cũ. HTTPS phải được xác minh qua CA, mỗi thiết
-bị có token riêng, Hermes và PostgreSQL vẫn nằm trong boundary nội bộ. Unix socket
-và state client chỉ dành cho tài khoản hệ điều hành sở hữu; đây không phải sandbox
-chống tiến trình độc hại chạy cùng tài khoản. MCP metadata xác định task gốc nhưng
-không thay thế xác thực thiết bị trên server.
+Queued prompt payloads are encrypted with environment-provided keys and expire
+under explicit TTLs. Results, artifacts, runtime logs and backups may still be
+sensitive; restrict permissions and retention. Never log tokens, encryption keys
+or plaintext prompts. Codex and Hermes have their own session retention policies.
+Preserve keys with existing encrypted records when changing installation names.
 
-Native queue không đảm bảo idempotency. ACK không rõ phải giữ
-`delivery_outcome_unknown`; không tự gửi lại để che mất trạng thái mơ hồ. Chỉ bản
-Codex/schema đã xác minh mới bật adapter. File upload có giới hạn kích thước,
-digest, phạm vi thiết bị và TTL; bản beta chưa quét virus. Chỉ UTF-8 text/plain được
-dùng làm reference text cho Hermes, không thực thi nội dung upload.
+A mutating Hermes request with an uncertain outcome is never blindly replayed.
+Only exact saved identity may reconcile it. Native queue insertion is likewise
+not idempotent: a lost acknowledgement remains `delivery_outcome_unknown` unless
+exact evidence reconciles it. Native delivery is gated by the tested CLI version
+and schema; queue acknowledgement does not prove consumption.
 
-Đây là project độc lập, không phải sản phẩm chính thức hay được hỗ trợ bởi Nous Research/Hermes Agent hoặc OpenAI/Codex.
+Uploads are bounded, digest-checked, device-scoped and expire. They are inert
+objects, not executable content. Only valid UTF-8 `text/plain` may be attached as
+untrusted reference text for Hermes. The gateway does not provide virus scanning.
+
+Legacy inbound gateway modes, the Hermes-to-Codex plugin and old executable/
+configuration aliases are absent in v0.7. Follow
+[migration and rollback](docs/migration-v0.7.md); preserve private backups before
+removing obsolete operational installations.
+
+This independent project is not an official product of Nous Research or OpenAI.

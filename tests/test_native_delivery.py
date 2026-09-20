@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from codex_a2a_gateway.native_delivery import (
+from hermes_a2a_gateway.native_delivery import (
     NativeOrigin,
     NativeOutcomeUnknown,
     NativeQueueDelivery,
@@ -55,7 +55,7 @@ def fake_codex(tmp_path):
         + r"""
 import json, os, pathlib, sys
 mode = os.environ.get("FAKE_NATIVE_MODE", "ok")
-assert not any(key.startswith("CODEX_A2A_GATEWAY_") for key in os.environ)
+assert not any(key.startswith("HERMES_A2A_GATEWAY_") for key in os.environ)
 if sys.argv[1:] == ["--version"]:
     print("codex-cli " + ("9.9.9" if mode == "unsupported" else "0.154.0"))
     sys.exit()
@@ -168,9 +168,9 @@ async def test_capability_revalidates_replaced_binary(fake_codex, monkeypatch):
 
 
 async def test_native_subprocess_environment_strips_gateway_secrets(fake_codex, tmp_path, monkeypatch):
-    monkeypatch.setenv("CODEX_A2A_GATEWAY_CLIENT_TOKEN", "must-not-reach-native")
-    monkeypatch.setenv("CODEX_A2A_GATEWAY_CLIENT_PAYLOAD_KEY", "must-not-reach-native")
-    monkeypatch.setenv("CODEX_A2A_GATEWAY_BROKER_DEVICE_TOKENS", "must-not-reach-native")
+    monkeypatch.setenv("HERMES_A2A_GATEWAY_CLIENT_TOKEN", "must-not-reach-native")
+    monkeypatch.setenv("HERMES_A2A_GATEWAY_CLIENT_PAYLOAD_KEY", "must-not-reach-native")
+    monkeypatch.setenv("HERMES_A2A_GATEWAY_BROKER_DEVICE_TOKENS", "must-not-reach-native")
     monkeypatch.setenv("FAKE_NATIVE_RECORD", str(tmp_path / "record.jsonl"))
     native = NativeQueueDelivery(str(fake_codex))
     assert (await native.capability())["supported"]

@@ -43,21 +43,16 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="codex-app-server-schema-") as directory:
         root = Path(directory)
         subprocess.run(
-            [args.codex_bin, "app-server", "generate-json-schema", "--out", str(root)],
+            [args.codex_bin, "app-server", "generate-json-schema", "--experimental", "--out", str(root)],
             check=True,
             stdout=subprocess.DEVNULL,
         )
         require_fields(root, "v1/InitializeParams.json", {"clientInfo"})
-        require_fields(root, "v2/ThreadStartParams.json", {"cwd", "approvalPolicy"})
-        require_fields(root, "v2/ThreadResumeParams.json", {"threadId"})
-        require_fields(root, "v2/ThreadReadParams.json", {"threadId", "includeTurns"})
-        require_fields(root, "v2/TurnStartParams.json", {"threadId", "input", "clientUserMessageId"})
-        require_fields(root, "v2/TurnStartParams.json", {"model", "effort"})
-        require_fields(root, "v2/ModelListResponse.json", {"data", "nextCursor"})
-        require_fields(root, "v2/TurnInterruptParams.json", {"threadId", "turnId"})
-        require_method(root, "item/tool/requestUserInput")
-        require_method(root, "item/commandExecution/requestApproval")
-        require_method(root, "item/fileChange/requestApproval")
+        require_fields(root, "v2/ThreadQueueAddParams.json", {"threadId", "clientUserMessageId", "input"})
+        require_fields(root, "v2/ThreadQueueListParams.json", {"threadId", "cursor", "limit"})
+        require_method(root, "thread/queue/add")
+        require_method(root, "thread/queue/list")
+
     print("Codex App Server schema is compatible with the gateway adapter.")
     return 0
 

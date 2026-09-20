@@ -62,13 +62,14 @@ def main() -> int:
         return 1
     for path in distributions:
         names = members(path)
-        for skill in ("codex-a2a-setup", "codex-a2a"):
-            suffix = f"codex_a2a_gateway/skills/{skill}/SKILL.md"
-            if not any(name.endswith(suffix) for name in names):
-                print(f"missing packaged skill: {path.name}: {skill}")
+        required = ("__init__.py", "cli.py", "broker.py", "client.py", "client_mcp.py", "ssh_tunnel.py")
+        for module in required:
+            if not any(name.endswith("hermes_a2a_gateway/" + module) for name in names):
+                print(f"missing runtime module: {path.name}: {module}")
                 return 1
-        if not any(name.endswith("codex-a2a-setup/references/workstation.md") for name in names):
-            print(f"missing workstation reference: {path.name}")
+        forbidden = {"codex_a2a_gateway", "hermes_plugin", "skills"}
+        if any(set(Path(name).parts) & forbidden for name in names):
+            print(f"removed legacy package/assets remain: {path.name}")
             return 1
         print(f"checked {path.name}: {len(members(path))} members")
     return 0

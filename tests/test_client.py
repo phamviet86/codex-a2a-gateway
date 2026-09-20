@@ -10,10 +10,10 @@ import httpx
 import pytest
 from cryptography.fernet import Fernet
 
-from codex_a2a_gateway.client import ClientService, create_client_app
-from codex_a2a_gateway.client_settings import ClientSettings
-from codex_a2a_gateway.client_store import ClientStore
-from codex_a2a_gateway.native_delivery import NativeOrigin, NativeOutcomeUnknown, NativeUnsupported
+from hermes_a2a_gateway.client import ClientService, create_client_app
+from hermes_a2a_gateway.client_settings import ClientSettings
+from hermes_a2a_gateway.client_store import ClientStore
+from hermes_a2a_gateway.native_delivery import NativeOrigin, NativeOutcomeUnknown, NativeUnsupported
 
 
 def origin(call_id="call-1", thread_id=None):
