@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0] — 2026-09-21
+
+- Promote the client/server-only Hermes gateway after installed Mac/VPS SSH recovery and native Desktop result-consumption verification.
+- Keep canonical `hermes-a2a-gateway` package, command and MCP registration, plus `HERMES_A2A_GATEWAY_*` configuration; preserve existing v0.6 ledger/inbox identities and keys.
+- Harden release publication against delayed GitHub draft visibility using bounded read retries; never recreate the draft or overwrite published assets to recover.
+- Document migration, legacy removal, SSH failure handling and the dated deployment evidence.
+
 ## 0.7.0rc1 — 2026-09-21
 
 - Rename package, command and MCP registration to `hermes-a2a-gateway`, Python namespace to `hermes_a2a_gateway`, and configuration prefix to `HERMES_A2A_GATEWAY_*`.

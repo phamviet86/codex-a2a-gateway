@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish immutable artifacts from the exact successful main/push CI commit."""
+"""Publish versioned artifacts from the exact successful CI commit without overwriting."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
 import zipfile
 from email.parser import Parser
@@ -65,7 +66,7 @@ def validate_run(repo: str, sha: str, run: dict[str, Any]) -> None:
 def find_release(prefix: str) -> dict[str, Any] | None:
     # Write-token listing includes drafts; by-tag discovery does not.
     for page in range(1, 101):
-        releases = api(f"{prefix}/releases?per_page=100&page={page}")
+        releases = api(f"{prefix}/releases?per_page=100&page={page}&cache={time.time_ns()}")
         matches = [release for release in releases if release["tag_name"] == TAG]
         if matches:
             require(len(matches) == 1, "multiple releases for the same tag")
@@ -73,6 +74,18 @@ def find_release(prefix: str) -> dict[str, Any] | None:
         if len(releases) < 100:
             return None
     raise RuntimeError("release listing incomplete; refusing a duplicate")
+
+
+def wait_for_created_release(prefix: str) -> dict[str, Any] | None:
+    # GitHub may briefly omit a just-created draft from its listing. Retry only
+    # this read: never create a second release to conceal an uncertain result.
+    for delay in (0, 1, 2, 4, 8, 15):
+        if delay:
+            time.sleep(delay)
+        release = find_release(prefix)
+        if release is not None:
+            return release
+    return None
 
 
 def verify_tag(prefix: str, sha: str) -> None:
@@ -139,14 +152,14 @@ def main() -> None:
             "--notes-file",
             "docs/release-notes.md",
         )
-        release = find_release(prefix)
-        require(release is not None, "draft not visible after creation")
+        release = wait_for_created_release(prefix)
+        require(release is not None, "draft not visible after bounded read retries; resume this job later")
     if release is None:  # Keep the narrowed type explicit for static tooling.
         raise RuntimeError("missing release")
     if not release["draft"]:
         require(release["prerelease"] == PRERELEASE, "existing release maturity differs")
         require({asset["name"] for asset in release["assets"]} == set(ASSETS), "published asset set mismatch")
-        # Already-published assets are immutable. Tooling drift must not require a
+        # This publisher never changes already-published assets. Tooling drift must not require a
         # new build to be byte-identical to that verified historical artifact.
         with tempfile.TemporaryDirectory() as directory:
             gh("release", "download", TAG, "--dir", directory)
@@ -170,7 +183,7 @@ def main() -> None:
         for name in ASSETS:
             require(digest(Path(directory) / name) == digest(Path("dist") / name), f"download differs: {name}")
         subprocess.run([sys.executable, "scripts/write_sha256sums.py", "--check", directory], check=True)
-    # Check immutable identity and current main again before making the draft public.
+    # Check fixed tag identity and current main again before making the draft public.
     verify_tag(prefix, sha)
     require(api(f"{prefix}/git/ref/heads/main")["object"]["sha"] == sha, "main moved before publication")
     if release["draft"]:

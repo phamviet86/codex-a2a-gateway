@@ -4,7 +4,7 @@
 
 | Version | Security fixes |
 | --- | --- |
-| 0.7.0rc1 | Current candidate; report the exact installed version and transport mode |
+| 0.7.0 | Current release; report the exact installed version and transport mode |
 | 0.6 / 0.5 and older | Retired runtime; follow the v0.7 migration guide |
 
 ## Reporting a vulnerability

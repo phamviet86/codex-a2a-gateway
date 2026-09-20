@@ -2,7 +2,7 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Release candidate v0.7.0rc1** kết nối Codex Desktop với Hermes trên server riêng,
+**Bản phát hành v0.7.0** kết nối Codex Desktop với Hermes trên server riêng,
 qua MCP, daemon/inbox local và broker PostgreSQL. Client hỗ trợ HTTPS trực tiếp
 qua LAN/VPN hoặc HTTPS bên trong SSH tunnel do daemon quản lý.
 
@@ -76,3 +76,5 @@ việc cài package thành công. Xem [hợp đồng](docs/client-server-contrac
 Đây là dự án cộng đồng độc lập, không phải sản phẩm chính thức của OpenAI hoặc
 Nous Research. Codex Desktop là tích hợp đầu tiên; chưa có adapter cho mọi AI agent
 hay API cho Hermes tự tạo task Desktop.
+
+Xem [bằng chứng kiểm thử và triển khai](docs/testing-report-v0.7.0.md).

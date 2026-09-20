@@ -196,3 +196,33 @@ def test_release_workflow_checks_out_successful_main_push_sha(publisher: ModuleT
         f"run: python scripts/{Path(publisher.__file__).name}",
     ):
         assert guard in workflow
+
+
+def test_created_draft_visibility_retries_only_reads(publisher, monkeypatch):
+    draft = {"tag_name": publisher.TAG, "draft": True}
+    responses = iter([None, None, draft])
+    reads, sleeps = [], []
+
+    def find(prefix):
+        reads.append(prefix)
+        return next(responses)
+
+    monkeypatch.setattr(publisher, "find_release", find)
+    monkeypatch.setattr(publisher.time, "sleep", sleeps.append)
+    monkeypatch.setattr(publisher, "gh", lambda *args: pytest.fail("must not mutate release on read retry"))
+    assert publisher.wait_for_created_release("fixture") is draft
+    assert reads == ["fixture"] * 3
+    assert sleeps == [1, 2]
+
+
+def test_created_draft_visibility_has_a_bounded_failure(publisher, monkeypatch):
+    reads, sleeps = [], []
+
+    def find(prefix):
+        reads.append(prefix)
+        return None
+
+    monkeypatch.setattr(publisher, "find_release", find)
+    monkeypatch.setattr(publisher.time, "sleep", sleeps.append)
+    assert publisher.wait_for_created_release("fixture") is None
+    assert len(reads) == 6 and sum(sleeps) == 30
