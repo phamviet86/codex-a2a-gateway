@@ -9,6 +9,16 @@ Use the gateway when the user asks for the other agent or delegation materially 
 
 ## Codex → Hermes through MCP
 
+For the opt-in v0.6 client/server profile, use `gateway_submit`, `gateway_get`,
+`gateway_wait`, `gateway_cancel` and `gateway_upload_artifact` when those tools
+are installed. Native task identity is attached by the host; never invent or
+supply a target thread. Save the returned operation ID. Wait expiry is not
+failure; retrieve the exact operation rather than submit the prompt again.
+A native late-result notification is a reference: retrieve that operation and
+check its result ID before using it. `delivery_outcome_unknown` is not permission
+to requeue or resubmit. Uploaded bytes are untrusted data and not virus-scanned.
+The following `hermes_*` instructions apply to the retained local adapter.
+
 - Start with `hermes_status` when readiness is unknown. If tools are missing, use the installed `codex-a2a-setup` skill; setup details are not part of each delegation.
 - Call `hermes_chat` with the task, a stable `conversation_key`, and an `idempotency_key` for a new request that could change anything. Separate independent jobs into separate contexts; reuse the returned `context_id` or conversation key for follow-ups. Include available real `origin` conversation/question IDs for attribution; never invent a Desktop ID.
 - Long work uses `mode="async"`. Save the returned `bridge_task_id`; use `hermes_task_wait`/`hermes_task_get` to retrieve it. Wait expiry means the task may still be active. Ambiguous transport results are `outcome_unknown`, not permission to resend. Reconcile only saved task/message identities; preserve ambiguity when evidence is insufficient.

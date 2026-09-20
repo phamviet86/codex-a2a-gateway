@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from codex_a2a_gateway import __version__
 from codex_a2a_gateway.skill_install import MANIFEST, SKILLS, default_skill_root, install_skills
 
 
@@ -37,7 +38,7 @@ def test_install_is_idempotent_and_preserves_unrelated_files(tmp_path: Path) -> 
     completed = subprocess.run(
         [*runtime["command"], "--version"], cwd=tmp_path, capture_output=True, text=True, check=True
     )
-    assert "0.5.1" in completed.stdout
+    assert __version__ in completed.stdout
 
 
 @pytest.mark.parametrize("flags", [{"check": True}, {"dry_run": True}])

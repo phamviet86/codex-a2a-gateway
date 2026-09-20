@@ -233,10 +233,13 @@ class A2AClient:
         params: dict[str, Any],
         *,
         timeout: float,
+        stream_read_timeout: float | None = 10.0,
     ) -> AsyncIterator[dict[str, Any]]:
         await self.discover()
         body = self._rpc_body(method, params)
-        stream_timeout = httpx.Timeout(connect=self.settings.connect_timeout, read=10.0, write=10.0, pool=5.0)
+        stream_timeout = httpx.Timeout(
+            connect=self.settings.connect_timeout, read=stream_read_timeout, write=10.0, pool=5.0
+        )
         try:
             async with asyncio.timeout(timeout):
                 async with self._client.stream("POST", self._rpc_url, json=body, timeout=stream_timeout) as response:

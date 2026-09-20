@@ -1,5 +1,11 @@
 # Deploy on another computer
 
+For the v0.6 client/server prerelease (Desktop on a workstation, Hermes and a
+PostgreSQL broker on a private server), use the separate
+[client/server deployment guide](client-server-deployment.md). This page retains
+the local v0.5.1 deployment profile and its known working release URLs. Do not
+reuse its SQLite file or MCP registration for the new client daemon.
+
 For the recommended agent-led setup, install v0.5.1 and its packaged skills, then ask the agent to use `codex-a2a-setup`. See [agent-led workstation setup](agent-setup.md) for the request and configuration workflow.
 
 This guide installs `codex-a2a-gateway` from a versioned GitHub release asset without cloning the source repository. The supported beta topology is one local user running Codex, Hermes, and the gateway on the same macOS or Linux computer. For a concise Vietnamese path that configures and verifies both Codex and Hermes directions, see [Thiết lập Codex + Hermes](setup-codex-hermes.vi.md).

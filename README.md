@@ -1,21 +1,17 @@
 # Codex A2A Gateway
 
-> **v0.4.0 reliability contract:** see [durable jobs and delivery](docs/durable-jobs.md).
-> Async outbound handles now precede discovery; recovery requires exact request identity.
-> Wait expiry is not failure. Results support origin handles and consumption receipts;
-> automatic delivery into an originating Desktop/Hermes conversation is not implemented.
-
+> **v0.6 client/server beta:** Desktop MCP → local durable inbox → authenticated HTTPS/SSE broker → Hermes A2A. See [deployment and limitations](docs/client-server-deployment.md). Legacy local inbound/outbound modes remain available.
 
 [![CI](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/phamviet86/codex-a2a-gateway/actions/workflows/ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![A2A 1.0](https://img.shields.io/badge/A2A-1.0-6f42c1.svg)](https://a2a-protocol.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
-**Public beta · v0.5.1**
+**Prerelease beta · v0.6.0b1**
 
 English | [Tiếng Việt](README.vi.md)
 
-`codex-a2a-gateway` is a local bidirectional gateway that lets Codex participate in A2A v1.0 workflows even though Codex does not expose a native A2A endpoint.
+`codex-a2a-gateway` provides local and client/server adapters that let Codex participate in A2A v1.0 workflows.
 
 - **Codex → A2A:** Codex calls seven MCP stdio tools that delegate to the local Hermes A2A peer.
 - **A2A → Codex:** Hermes or another A2A v1.0 client calls an HTTP/SSE gateway backed by Codex App Server.
@@ -24,17 +20,23 @@ Hermes Agent is the first verified peer, not the product boundary. The inbound e
 
 > **Independent community project:** this software is not an official OpenAI/Codex or Nous Research/Hermes Agent product and is not endorsed by either organization. Product names are used only to describe interoperability.
 
-> **Version scope:** `v0.5.1` adds a narrow Hermes compatibility path for new task IDs on outbound continuation, with durable per-attempt bindings and conservative recovery. Packaged setup skills and inbound behavior are retained.
+> **Version scope:** `v0.6.0b1` adds a separate PostgreSQL broker and local client daemon, encrypted expiring payloads, device-scoped replay, and a capability-checked native queue adapter for late Desktop results. This is an opt-in prerelease. Existing SQLite state and the seven `hermes_*` tools retain their contracts.
 
 ## Architecture
 
 ```text
-Codex client --MCP stdio--> outbound adapter --> local Hermes A2A :9900
-A2A v1 client --HTTP/SSE--> inbound gateway --> Codex App Server stdio
-                    \--------------------------> SQLite mappings/tasks
+Desktop --MCP--> local client daemon + SQLite inbox
+                          | verified HTTPS commands / SSE
+                   broker + PostgreSQL ledger
+                          | loopback A2A
+                        Hermes
+
+Legacy: MCP serve --> local Hermes; inbound gateway --> Codex App Server
 ```
 
-The MCP server and inbound gateway are separate processes. They share durable SQLite mappings between A2A contexts/tasks and Codex conversations/threads.
+The new client and broker use separate stores from the legacy gateway. The client binds an operation to trusted native MCP metadata; the broker authenticates a device token. A result received after the inline wait may enqueue a reference in the original Desktop task. Unknown queue acknowledgements remain explicit and are never blindly retried.
+
+Start with the [client/server deployment guide](docs/client-server-deployment.md) for the new topology. The quickstarts below cover retained local modes.
 
 ## Current capabilities
 
@@ -75,14 +77,14 @@ The App Server backend follows the official [Codex App Server protocol](https://
 
 Give your agent this request:
 
-> Install Codex A2A Gateway v0.5.1 from its release wheel into a dedicated Python 3.11 environment, install its skills, then use `codex-a2a-setup` to configure this machine. Reuse existing credentials and settings; ask only for required missing values such as direction and inbound workspace. Verify the selected transport and client tool discovery.
+> Install Codex A2A Gateway v0.6.0b1 from its release wheel into a dedicated Python 3.11 environment, install its skills, then use `codex-a2a-setup` to configure this machine. Reuse existing credentials and settings; ask only for required missing values such as direction and inbound workspace. Verify the selected transport and client tool discovery.
 
 The agent can install without cloning the repository:
 
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
+  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 
@@ -175,7 +177,7 @@ hermes tools enable a2a --platform cli
 
 ### Durable Hermes client
 
-The `v0.5.1` wheel ships this plugin. Enable only its dedicated CLI toolset:
+The `v0.6.0b1` wheel ships this plugin. Enable only its dedicated CLI toolset:
 
 ```bash
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
@@ -256,7 +258,7 @@ See [.env.example](.env.example) for the complete operator surface. Legacy `HERM
 - Outbound URLs and discovered interfaces must remain loopback-only and redirects are not followed.
 - A non-loopback inbound host or public URL requires a bearer token; use TLS at a trusted reverse proxy for any remote deployment.
 - Tokens are read from environment variables and compared without writing them to logs.
-- Original outbound prompts are not stored by the gateway. SQLite does store results, artifacts, mappings, status, and minimal error data, which may still be sensitive.
+- The legacy local adapter does not store original outbound prompts. The opt-in v0.6 client/broker stores encrypted prompts with an explicit TTL for durable dispatch. Results, artifacts, mappings and status can also be sensitive; keep stores and environment keys private with a matching backup retention policy.
 - Codex and Hermes can maintain their own session, audit, and conversation records.
 - Never publish tokens, transcripts, SQLite files, or private workspace paths in issues.
 
@@ -274,7 +276,7 @@ Report vulnerabilities through GitHub private vulnerability reporting as describ
 
 Default tests use an ephemeral fake A2A server and do not require Hermes or a live model. `doctor` is read-only; `smoke` sends a real Hermes task and must be run intentionally with harmless content.
 
-Current release evidence is in [v0.5.1 validation](docs/testing-report-v0.5.1.md); [v0.4.0 live validation](docs/testing-report-v0.4.0.md) remains historical evidence for the inherited durability contract. Coding agents must also follow [AGENTS.md](AGENTS.md).
+Current release evidence is in [v0.6.0b1 validation](docs/testing-report-v0.6.0b1.md); [v0.4.0 live validation](docs/testing-report-v0.4.0.md) remains historical evidence for the inherited durability contract. Coding agents must also follow [AGENTS.md](AGENTS.md).
 
 ## Migration from the old name
 

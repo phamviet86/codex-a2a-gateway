@@ -47,6 +47,31 @@ def main() -> int:
         for command in ("codex-a2a-gateway", "codex-hermes-a2a-bridge"):
             run(str(executable(venv_root, command)), "--help")
             run(str(executable(venv_root, command)), "--version")
+        # Exercise the installed new facade outside the checkout. Discovery needs
+        # neither credentials nor a model; missing native metadata must fail closed.
+        probe = """
+import asyncio
+import sys
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
+from codex_a2a_gateway.broker import run_broker
+from codex_a2a_gateway.client import run_client, client_doctor
+
+async def main():
+    params = StdioServerParameters(command=sys.executable,
+        args=['-m', 'codex_a2a_gateway.cli', 'client-mcp'])
+    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+        expected = {'gateway_submit', 'gateway_get', 'gateway_wait',
+                    'gateway_cancel', 'gateway_upload_artifact'}
+        assert {tool.name for tool in tools.tools} == expected
+        result = await session.call_tool('gateway_get', {'operation_id': 'no-native-origin'})
+        assert result.is_error is True
+asyncio.run(main())
+print('installed client MCP discovery and metadata refusal passed')
+"""
+        subprocess.run([str(python), "-c", probe], cwd=temporary, check=True)
         # Run outside the checkout, with an isolated skill root and no user config mutation.
         skill_root = Path(temporary) / "isolated skills"
         command = str(executable(venv_root, "codex-a2a-gateway"))

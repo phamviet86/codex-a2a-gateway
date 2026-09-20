@@ -32,7 +32,9 @@ fingerprint and optional `origin` before discovery/network I/O. Async mode does
 not wait for discovery or a remote ACK. The worker continues independently of the
 caller wait. Keep `bridge_task_id` and a caller-chosen `idempotency_key`; retrying
 an identical key returns the saved job, including when no context was supplied.
-Prompts are not stored. Results, artifacts and opaque origin handles are stored.
+In this legacy local adapter, prompts are not stored. Results, artifacts and opaque origin handles are stored.
+The separate v0.6 client/server profile uses encrypted expiring dispatch payloads;
+see its [contract](client-server-v0.6-contract.md) and [deployment guide](client-server-deployment.md).
 
 `origin` accepts only `conversation_id`, `question_id` and `parent_job_id` strings
 (up to 256 characters each). Supply identifiers, not question text or secrets.
