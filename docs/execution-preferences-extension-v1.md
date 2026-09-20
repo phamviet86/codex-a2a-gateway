@@ -48,3 +48,7 @@ The bundled Hermes plugin fetches the loopback Agent Card before sending this ex
 The request preference participates in message idempotency. It applies to the submitted inbound task only. An `INPUT_REQUIRED` continuation must reuse the durable local handle and remote `taskId`; a new preference is rejected rather than silently changing an existing task's execution selection.
 
 Codex → Hermes MCP tools never accept or forward these fields.
+
+The repository is now named `hermes-a2a-gateway`. The extension URI above retains
+its original spelling as a negotiated wire identifier; clients must not substitute
+the new repository name in protocol headers or message extension fields.

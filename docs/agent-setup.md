@@ -15,7 +15,7 @@ The agent runs these commands (replace `python3.11` with the selected compatible
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 

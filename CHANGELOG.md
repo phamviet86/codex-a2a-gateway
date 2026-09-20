@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Rename the repository and product to `hermes-a2a-gateway` / Hermes A2A Gateway, with Codex Desktop as the first verified agent integration.
+- Update current installation links, project metadata and release repository checks. Preserve package/CLI names, Python namespace, environment variables, MCP registrations, state paths, protocol extension identifiers and published release assets.
+
 ## 0.6.0b1 — 2026-09-21
 
 - Add an opt-in client/server beta: Desktop MCP and a single-writer local SQLite daemon communicate with a PostgreSQL broker over authenticated HTTPS commands and resumable SSE.

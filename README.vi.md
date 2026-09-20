@@ -1,4 +1,4 @@
-# Codex A2A Gateway
+# Hermes A2A Gateway
 
 > **Client/server beta v0.6:** Desktop MCP → daemon/inbox local → broker HTTPS/SSE → Hermes A2A. Xem [triển khai và giới hạn](docs/client-server-deployment.md). Các chế độ local cũ vẫn hoạt động.
 
@@ -6,14 +6,18 @@
 
 **Bản thử nghiệm prerelease · v0.6.0b1**
 
-`codex-a2a-gateway` giúp Codex giao tiếp hai chiều theo chuẩn A2A v1.0:
+Hermes A2A Gateway là cổng kết nối Hermes với các AI agent qua A2A. Codex Desktop là tích hợp agent đầu tiên đã được kiểm chứng; adapter cho các runtime agent khác chưa được triển khai.
+
+Repo mang tên `hermes-a2a-gateway`. Để giữ tương thích cài đặt, package và lệnh vẫn là `codex-a2a-gateway`, namespace Python vẫn là `codex_a2a_gateway`; biến môi trường, đăng ký MCP và đường dẫn dữ liệu hiện tại giữ nguyên.
+
+Các luồng đã triển khai:
 
 - **Codex → Hermes/A2A:** Codex gọi bảy MCP tool qua stdio để giao việc cho Hermes Agent local.
 - **Hermes/A2A → Codex:** Hermes hoặc A2A client gọi HTTP/SSE gateway; gateway chuyển task vào Codex App Server.
 
 Với task Hermes → Codex chạy lâu, `a2a_call` built-in vẫn là một lượt đồng bộ. Plugin `codex_a2a` đi kèm `v0.4.0` bổ sung submit sớm, handle bền, poll/cancel, tiếp tục `INPUT_REQUIRED` và không blind resend sau timeout.
 
-Hermes là peer đầu tiên đã được kiểm thử, không phải giới hạn của sản phẩm. Inbound gateway dùng các operation A2A v1.0 phổ biến nên các A2A client tương thích khác cũng có thể kết nối.
+Inbound gateway dùng các operation A2A v1.0 phổ biến nên các A2A client tương thích khác cũng có thể kết nối. Đợt đổi tên repo này chưa bổ sung native integration cho agent khác.
 
 > Đây là dự án cộng đồng độc lập, không phải sản phẩm chính thức hay được bảo trợ bởi OpenAI/Codex hoặc Nous Research/Hermes Agent.
 
@@ -32,7 +36,7 @@ Agent cài trực tiếp, không cần clone repository:
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.6.0b1/codex_a2a_gateway-0.6.0b1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
 
@@ -45,8 +49,8 @@ Release wheel và quy trình cài sạch được kiểm tra trên macOS/Linux. 
 Nếu phát triển từ source:
 
 ```bash
-git clone https://github.com/phamviet86/codex-a2a-gateway.git
-cd codex-a2a-gateway
+git clone https://github.com/phamviet86/hermes-a2a-gateway.git
+cd hermes-a2a-gateway
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```

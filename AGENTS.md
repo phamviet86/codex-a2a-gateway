@@ -4,12 +4,13 @@ These instructions apply to the entire repository. Codex and other coding agents
 
 ## Mission and scope
 
-`codex-a2a-gateway` gives Codex a bidirectional A2A v1.0 integration:
+`hermes-a2a-gateway` connects Hermes with AI agents through A2A. Codex Desktop
+is the first verified agent integration. Current implemented legacy flows include:
 
 - Outbound: Codex calls the local MCP stdio server, which delegates to the configured loopback Hermes A2A peer.
 - Inbound: an A2A client calls the HTTP/SSE gateway, which maps the task to a Codex App Server thread and turn.
 
-Hermes is the first verified outbound peer, not the product boundary. Do not turn this project into Hermes administration, a general arbitrary-URL proxy, or a multi-tenant service without an explicit architecture and security decision.
+The repository/product rename does not implement adapters for additional agent runtimes. Do not turn this project into Hermes administration, a general arbitrary-URL proxy, or a multi-tenant service without an explicit architecture and security decision.
 
 ## Architecture ownership
 
@@ -50,6 +51,9 @@ Treat `docs/durable-jobs.md`, `docs/architecture-v0.2.md`, `docs/inbound-gateway
 - Execution preferences are inbound-only and require the negotiated Agent Card extension (`A2A-Extensions`, `message.extensions`, and `message.metadata.executionPreferences`). Query App Server `model/list`; receiver policy may narrow that catalog but must not invent support. Persist requested/effective decisions, send only `model` and `effort` to `turn/start`, and reject the extension in CLI mode.
 
 ## Compatibility policy
+
+- Repository/product name: `hermes-a2a-gateway` / Hermes A2A Gateway. The rename does not migrate runtime identifiers.
+- Preserve the existing execution-preferences extension URI, including its old repository URL: it is a negotiated wire identifier, not just a documentation link.
 
 - Canonical distribution, executable, and Python namespace: `codex-a2a-gateway`, `codex-a2a-gateway`, and `codex_a2a_gateway`.
 - The `codex-hermes-a2a-bridge` executable and legacy `HERMES_BRIDGE_*` / `CODEX_BRIDGE_*` environment variables are temporary v0.2 compatibility aliases. Canonical `CODEX_A2A_GATEWAY_*` values take precedence.

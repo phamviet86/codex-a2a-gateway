@@ -1,7 +1,7 @@
 # Client/server setup
 
 Use the exact installed version's
-[deployment guide](https://github.com/phamviet86/codex-a2a-gateway/blob/v0.6.0b1/docs/client-server-deployment.md).
+[deployment guide](https://github.com/phamviet86/hermes-a2a-gateway/blob/v0.6.0b1/docs/client-server-deployment.md).
 Its topology is Desktop MCP → local daemon/SQLite → verified HTTPS/SSE → private
 broker/PostgreSQL → loopback Hermes A2A. The legacy inbound gateway is separate.
 

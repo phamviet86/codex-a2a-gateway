@@ -52,7 +52,7 @@ def find_release(prefix: str) -> dict[str, Any] | None:
 def main() -> None:
     repo, sha = os.environ["GH_REPO"], os.environ["RELEASE_SHA"]
     workflow_sha = os.environ["WORKFLOW_SHA"]
-    assert repo == "phamviet86/codex-a2a-gateway"
+    assert repo == "phamviet86/hermes-a2a-gateway"
     assert sha == "2b022152a9f85a23afa572cb5e6d10fe7dd10b37"
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     run = event["workflow_run"]

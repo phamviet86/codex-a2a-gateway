@@ -33,7 +33,7 @@ def valid_run(version: str = "0.5.1") -> dict[str, Any]:
         "conclusion": "success",
         "event": "push",
         "head_branch": "main",
-        "head_repository": {"full_name": "phamviet86/codex-a2a-gateway"},
+        "head_repository": {"full_name": "phamviet86/hermes-a2a-gateway"},
         "head_sha": "a" * 40,
         "head_commit": {"message": f"Publish [release v{version}]"},
     }

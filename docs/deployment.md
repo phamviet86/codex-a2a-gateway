@@ -45,7 +45,7 @@ Use a dedicated virtual environment so the gateway does not modify the system Py
 ```bash
 python3.11 -m venv "$HOME/.local/share/codex-a2a-gateway/venv"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" --version
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/codex-a2a-gateway" install-skills
 ```
@@ -62,7 +62,7 @@ For a higher-assurance installation, download the wheel, source distribution, an
 
 ```bash
 release_dir=$(mktemp -d)
-release_url="https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1"
+release_url="https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.5.1"
 wheel="codex_a2a_gateway-0.5.1-py3-none-any.whl"
 sdist="codex_a2a_gateway-0.5.1.tar.gz"
 
@@ -235,7 +235,7 @@ Stop the existing gateway and close clients owning its MCP process before upgrad
 gateway_venv="$HOME/.local/share/codex-a2a-gateway/venv"
 gateway_bin="$gateway_venv/bin/codex-a2a-gateway"
 "$gateway_venv/bin/python" -m pip install --upgrade --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.5.1/codex_a2a_gateway-0.5.1-py3-none-any.whl"
 "$gateway_bin" --version
 "$gateway_bin" install-skills --dry-run
 "$gateway_bin" install-skills
@@ -265,7 +265,7 @@ test ! -e "$state_path-wal" || cp -p "$state_path-wal" "$backup_dir/state.sqlite
 test ! -e "$state_path-shm" || cp -p "$state_path-shm" "$backup_dir/state.sqlite3-shm"
 
 "$gateway_venv/bin/python" -m pip install --upgrade --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.4.0/codex_a2a_gateway-0.4.0-py3-none-any.whl"
 "$gateway_bin" --version
 "$gateway_bin" install-hermes-plugin --replace
 hermes plugins enable codex-a2a-gateway
@@ -299,7 +299,7 @@ Stop the v0.5.1 gateway and close MCP writers before rollback. Preserve a consis
 
 ```bash
 "$HOME/.local/share/codex-a2a-gateway/venv/bin/python" -m pip install --force-reinstall \
-  "https://github.com/phamviet86/codex-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
+  "https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.5.0/codex_a2a_gateway-0.5.0-py3-none-any.whl"
 ```
 
 Schema 6 is additive; retain its binding table and all task/message/event rows during rollback. v0.5.0 cannot apply the rotating-ID compatibility guarantees. Resolve or leave affected jobs unknown; do not replay them or overwrite current state with a pre-upgrade backup that would lose new records. Never run old and new MCP registrations against the same SQLite file concurrently.
