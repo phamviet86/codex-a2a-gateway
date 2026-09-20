@@ -112,6 +112,12 @@ class FakePeer:
         self.closed = True
 
 
+async def settle(dispatcher: BrokerDispatcher) -> None:
+    """Run a scheduler tick and await the bounded finite fake-peer work it starts."""
+    await dispatcher.step()
+    await asyncio.gather(*dispatcher._streams.values(), *dispatcher._reads.values(), *dispatcher._cancels.values())
+
+
 def test_configuration_redacts_secrets_and_requires_distinct_tokens() -> None:
     values = dict(
         database_url="postgresql://secret", device_tokens={"a": TOKEN_A}, encryption_key=Fernet.generate_key().decode()
@@ -312,10 +318,10 @@ async def test_lost_submit_ack_never_resends(ledger: BrokerStore, broker_setting
     ledger.acquire_dispatcher()
     peer = FakePeer(lose_ack=True)
     dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-    await dispatcher.step()
+    await settle(dispatcher)
     assert ledger.get("a", request["operation_id"])["state"] == "outcome_unknown"
     for _ in range(3):
-        await dispatcher.step()
+        await settle(dispatcher)
     assert len(peer.submissions) == 1
     assert not peer.gets
 
@@ -325,7 +331,7 @@ async def test_first_handle_reconciles_after_restart(ledger: BrokerStore, broker
     ledger.accept("a", request)
     ledger.acquire_dispatcher()
     peer = FakePeer()
-    await BrokerDispatcher(ledger, peer, broker_settings).step()
+    await settle(BrokerDispatcher(ledger, peer, broker_settings))
     assert ledger.get("a", request["operation_id"])["remote_task_id"] == "peer-task"
     ledger.close()
     restarted = BrokerStore(broker_settings)
@@ -333,7 +339,7 @@ async def test_first_handle_reconciles_after_restart(ledger: BrokerStore, broker
         restarted.acquire_dispatcher()
         restarted.recover()
         unknown = restarted.get("a", request["operation_id"])
-        await BrokerDispatcher(restarted, peer, broker_settings).step()
+        await settle(BrokerDispatcher(restarted, peer, broker_settings))
         final = restarted.get("a", request["operation_id"])
         assert final["state"] == "completed" and final["result_id"] == unknown["result_id"]
         assert final["result"]["text"] == "synthetic result"
@@ -352,14 +358,14 @@ async def test_cancel_is_best_effort_and_ack_loss_is_not_retried(
     peer.result = task(state="working")
     peer.cancel_error = True
     dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-    await dispatcher.step()
+    await settle(dispatcher)
     snapshot, _ = ledger.cancel_intent("a", request["operation_id"])
-    assert snapshot["state"] == "running" and snapshot["error"]["code"] == "cancel_unconfirmed"
-    await dispatcher.step()
+    assert snapshot["state"] == "outcome_unknown" and snapshot["error"]["code"] == "cancel_unconfirmed"
+    await settle(dispatcher)
     ledger.cancel_intent("a", request["operation_id"])
-    await dispatcher.step()
+    await settle(dispatcher)
     assert peer.cancels == ["peer-task"]
-    assert ledger.get("a", request["operation_id"])["state"] == "running"
+    assert ledger.get("a", request["operation_id"])["state"] == "outcome_unknown"
     pending = command()
     ledger.accept("a", pending)
     assert ledger.cancel_intent("a", pending["operation_id"])[0]["state"] == "canceled"
@@ -375,8 +381,8 @@ async def test_peer_binary_results_are_stored_once(ledger: BrokerStore, broker_s
         artifacts=[{"artifactId": "unstable-peer-id", "parts": [{"raw": base64.b64encode(b"binary").decode()}]}]
     )
     dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-    await dispatcher.step()
-    await dispatcher.step()
+    await settle(dispatcher)
+    await settle(dispatcher)
     snapshot = ledger.get("a", request["operation_id"])
     descriptor = snapshot["result"]["artifacts"][0]
     assert ledger.artifact("a", descriptor["artifact_id"])[1] == b"binary"
@@ -498,9 +504,9 @@ async def test_hermes_stream_handle_and_exact_get(
     ledger.acquire_dispatcher()
     try:
         dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-        await dispatcher.step()
+        await settle(dispatcher)
         assert ledger.get("a", request["operation_id"])["remote_task_id"]
-        await dispatcher.step()
+        await settle(dispatcher)
         final = ledger.get("a", request["operation_id"])
         assert final["state"] == "completed"
         assert "fake-marker" in final["result"]["text"]
@@ -542,8 +548,8 @@ async def test_text_attachment_reaches_peer_as_untrusted_data(
     peer = HermesBrokerPeer(A2AClient(Settings(endpoint=fake_a2a.endpoint)))
     try:
         dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-        await dispatcher.step()
-        await dispatcher.step()
+        await settle(dispatcher)
+        await settle(dispatcher)
         text = ledger.get("a", request["operation_id"])["result"]["text"]
         assert "synthetic-attachment-marker" in text and "untrusted" in text
         assert descriptor["sha256"] in text
@@ -591,8 +597,8 @@ async def test_url_and_oversized_peer_artifacts_are_not_fetched(
     peer = FakePeer()
     peer.result = task(artifacts=[{"parts": [{"url": "http://example.invalid/private"}]}])
     dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-    await dispatcher.step()
-    await dispatcher.step()
+    await settle(dispatcher)
+    await settle(dispatcher)
     snapshot = ledger.get("a", request["operation_id"])
     assert snapshot["state"] == "failed" and snapshot["error"]["code"] == "unsupported_peer_artifact"
     assert len(peer.submissions) == 1
@@ -646,9 +652,276 @@ async def test_first_terminal_task_is_persisted_without_get(
     ledger.acquire_dispatcher()
     peer = FirstTerminal()
     dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
-    await dispatcher.step()
+    await settle(dispatcher)
     snapshot = ledger.get("a", request["operation_id"])
     assert snapshot["state"] == "completed"
     assert snapshot["result"]["text"] == "first task authoritative result"
-    await dispatcher.step()
+    await settle(dispatcher)
     assert len(peer.submissions) == 1
+
+
+async def wait_until(predicate: Any) -> None:
+    async with asyncio.timeout(2):
+        while not predicate():
+            await asyncio.sleep(0.005)
+
+
+async def test_retained_stream_completes_and_does_not_starve_flow_or_cancel(
+    ledger: BrokerStore,
+    broker_settings: BrokerSettings,
+) -> None:
+    first, second = command(), command()
+    queued_same_flow = command(flow_id=first["flow_id"])
+
+    class DisconnectSensitive(FakePeer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.release = asyncio.Event()
+            self.ready = asyncio.Event()
+            self.premature_close = False
+
+        async def submit(self, claim: dict[str, Any], timeout: float) -> AsyncGenerator[A2ATaskResult, None]:
+            self.submissions.append(claim)
+            handle = claim["operation_id"]
+            definitive = False
+            try:
+                yield task(handle=handle, state="working", text="")
+                if handle == first["operation_id"]:
+                    self.ready.set()
+                    await self.release.wait()
+                definitive = True
+                yield task(handle=handle, text="stream reached completion")
+            finally:
+                if not definitive:
+                    self.premature_close = True
+
+        async def cancel(self, handle: str) -> A2ATaskResult:
+            self.cancels.append(handle)
+            return task(handle=handle, state="working")
+
+    peer = DisconnectSensitive()
+    broker_settings.max_concurrent_streams = 2
+    ledger.acquire_dispatcher()
+    ledger.accept("a", first)
+    ledger.accept("a", second)
+    ledger.accept("a", queued_same_flow)
+    dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
+    try:
+        await asyncio.wait_for(dispatcher.step(), 1)
+        await peer.ready.wait()
+        await wait_until(lambda: ledger.get("a", second["operation_id"])["state"] == "completed")
+        assert ledger.get("a", first["operation_id"])["remote_task_id"] == first["operation_id"]
+        assert ledger.get("a", queued_same_flow["operation_id"])["state"] == "accepted"
+        assert not peer.premature_close
+        assert len(peer.submissions) == 2 and not peer.gets
+        ledger.cancel_intent("a", first["operation_id"])
+        await asyncio.wait_for(dispatcher.step(), 1)
+        await wait_until(lambda: len(peer.cancels) == 1)
+        assert peer.cancels == [first["operation_id"]]
+        assert ledger.get("a", first["operation_id"])["state"] == "running"
+        peer.release.set()
+        await wait_until(lambda: ledger.get("a", first["operation_id"])["state"] == "completed")
+        await settle(dispatcher)
+        assert ledger.get("a", queued_same_flow["operation_id"])["state"] == "completed"
+        assert not peer.premature_close and len(peer.submissions) == 3
+    finally:
+        await dispatcher.aclose()
+
+
+async def test_stream_limit_and_shutdown_keep_claims_nonreplayable(
+    ledger: BrokerStore,
+    broker_settings: BrokerSettings,
+) -> None:
+    class HeldStream(FakePeer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.exits = 0
+
+        async def submit(self, claim: dict[str, Any], timeout: float) -> AsyncGenerator[A2ATaskResult, None]:
+            self.submissions.append(claim)
+            try:
+                yield task(handle=claim["operation_id"], state="working")
+                await asyncio.Event().wait()
+            finally:
+                self.exits += 1
+
+    broker_settings.max_concurrent_streams = 2
+    requests = [command() for _ in range(3)]
+    ledger.acquire_dispatcher()
+    for request in requests:
+        ledger.accept("a", request)
+    peer = HeldStream()
+    dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
+    await dispatcher.step()
+    await wait_until(lambda: len(peer.submissions) == 2)
+    assert len(dispatcher._streams) == 2
+    await dispatcher.step()
+    assert len(peer.submissions) == 2
+    await dispatcher.aclose()
+    assert peer.exits == 2 and not dispatcher._streams
+    for request in requests[:2]:
+        snapshot = ledger.get("a", request["operation_id"])
+        assert snapshot["state"] == "outcome_unknown"
+        assert snapshot["remote_task_id"] == request["operation_id"]
+    assert ledger.get("a", requests[2]["operation_id"])["state"] == "accepted"
+    # No claimed operation can become dispatchable, even after recovery.
+    ledger.recover()
+    assert ledger.claim()["operation_id"] == requests[2]["operation_id"]
+    assert ledger.claim() is None
+
+
+async def test_stream_saved_handle_then_error_recovers_only_by_get(
+    ledger: BrokerStore,
+    broker_settings: BrokerSettings,
+) -> None:
+    class Disconnected(FakePeer):
+        async def submit(self, claim: dict[str, Any], timeout: float) -> AsyncGenerator[A2ATaskResult, None]:
+            self.submissions.append(claim)
+            yield task(state="working")
+            raise ConnectionResetError("synthetic stream reset")
+
+    request = command()
+    ledger.accept("a", request)
+    ledger.acquire_dispatcher()
+    peer = Disconnected()
+    dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
+    try:
+        await settle(dispatcher)
+        unknown = ledger.get("a", request["operation_id"])
+        assert unknown["state"] == "outcome_unknown" and unknown["remote_task_id"] == "peer-task"
+        await settle(dispatcher)
+        final = ledger.get("a", request["operation_id"])
+        assert final["state"] == "completed" and final["result_id"] == unknown["result_id"]
+        assert len(peer.submissions) == 1 and peer.gets == ["peer-task"]
+    finally:
+        await dispatcher.aclose()
+
+
+def test_snapshot_timestamps_normalize_postgres_session_timezone(ledger: BrokerStore) -> None:
+    with ledger.transaction() as conn:
+        conn.execute("SET TIME ZONE 'Asia/Ho_Chi_Minh'")
+    snapshot, _ = ledger.accept("a", command())
+    assert snapshot["created_at"].endswith("Z") and snapshot["updated_at"].endswith("Z")
+
+
+async def test_peer_accumulates_bounded_stream_artifacts_until_status_completion() -> None:
+    class EventClient(A2AClient):
+        async def _sse(
+            self, method: str, params: dict[str, Any], *, timeout: float, stream_read_timeout: float | None = 10.0
+        ) -> AsyncGenerator[dict[str, Any], None]:
+            yield {"task": {"id": "handle", "status": {"state": "TASK_STATE_WORKING"}}}
+            yield {
+                "artifactUpdate": {"taskId": "handle", "artifact": {"artifactId": "a", "parts": [{"text": "first"}]}}
+            }
+            yield {
+                "artifactUpdate": {
+                    "taskId": "handle",
+                    "append": True,
+                    "lastChunk": True,
+                    "artifact": {"artifactId": "a", "parts": [{"text": "second"}]},
+                }
+            }
+            yield {"statusUpdate": {"taskId": "handle", "status": {"state": "TASK_STATE_COMPLETED"}}}
+
+    peer = HermesBrokerPeer(EventClient(Settings()))
+    claim = {**command(), "device_id": "a", "attachments": []}
+    try:
+        results = [item async for item in peer.submit(claim, 5)]
+        assert results[-1].state == "completed" and results[-1].text == "firstsecond"
+        assert len(results[-1].artifacts[0]["parts"]) == 1
+        peer.max_snapshot_bytes = 10
+        with pytest.raises(BrokerError, match="exceeds configured limit"):
+            _ = [item async for item in peer.submit(claim, 5)]
+    finally:
+        await peer.close()
+
+
+async def test_broker_silent_stream_timeout_override_preserves_legacy_default() -> None:
+    observed: list[float | None] = []
+
+    async def response(request: httpx.Request) -> httpx.Response:
+        observed.append(request.extensions["timeout"]["read"])
+        body = json.loads(request.content)
+        event = {
+            "jsonrpc": "2.0",
+            "id": body["id"],
+            "result": {
+                "task": {"id": "handle", "status": {"state": "TASK_STATE_COMPLETED"}},
+            },
+        }
+        return httpx.Response(200, content=b"data: " + canonical(event) + b"\n\n")
+
+    client = A2AClient(Settings())
+    await client.aclose()
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(response))
+    client._card = {"name": "synthetic"}
+    peer = HermesBrokerPeer(client)
+    try:
+        _ = [item async for item in client._sse("SendStreamingMessage", {}, timeout=1)]
+        _ = [item async for item in peer.submit({**command(), "device_id": "a", "attachments": []}, 1)]
+        assert observed == [10.0, None]
+    finally:
+        await peer.close()
+
+
+async def test_absolute_stream_deadline_closes_and_never_resends(
+    ledger: BrokerStore, broker_settings: BrokerSettings
+) -> None:
+    class SilentPeer(FakePeer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.stream_closed = False
+
+        async def submit(self, claim: dict[str, Any], timeout: float) -> AsyncGenerator[A2ATaskResult, None]:
+            self.submissions.append(claim)
+            try:
+                yield task(state="working")
+                await asyncio.Event().wait()
+            finally:
+                self.stream_closed = True
+
+    broker_settings.peer_timeout_seconds = 1
+    request = command()
+    ledger.accept("a", request)
+    ledger.acquire_dispatcher()
+    peer = SilentPeer()
+    dispatcher = BrokerDispatcher(ledger, peer, broker_settings)
+    try:
+        await settle(dispatcher)
+        assert peer.stream_closed
+        snapshot = ledger.get("a", request["operation_id"])
+        assert snapshot["state"] == "outcome_unknown" and snapshot["remote_task_id"] == "peer-task"
+        await settle(dispatcher)
+        assert len(peer.submissions) == 1 and peer.gets == ["peer-task"]
+    finally:
+        await dispatcher.aclose()
+
+
+async def test_peer_binary_append_chunks_preserve_exact_bytes() -> None:
+    class BinaryClient(A2AClient):
+        async def _sse(
+            self,
+            method: str,
+            params: dict[str, Any],
+            *,
+            timeout: float,
+            stream_read_timeout: float | None = 10.0,
+        ) -> AsyncGenerator[dict[str, Any], None]:
+            for index, content in enumerate((b"\x00first", b"\xfflast")):
+                yield {
+                    "artifactUpdate": {
+                        "taskId": "handle",
+                        "append": bool(index),
+                        "lastChunk": bool(index),
+                        "artifact": {"artifactId": "binary", "parts": [{"raw": base64.b64encode(content).decode()}]},
+                    }
+                }
+            yield {"statusUpdate": {"taskId": "handle", "status": {"state": "TASK_STATE_COMPLETED"}}}
+
+    peer = HermesBrokerPeer(BinaryClient(Settings()))
+    try:
+        results = [item async for item in peer.submit({**command(), "device_id": "a", "attachments": []}, 1)]
+        parts = results[-1].artifacts[0]["parts"]
+        assert len(parts) == 1 and base64.b64decode(parts[0]["raw"]) == b"\x00first\xfflast"
+    finally:
+        await peer.close()

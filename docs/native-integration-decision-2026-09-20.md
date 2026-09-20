@@ -92,6 +92,12 @@ Preserve Python and existing protocol/recovery code where their contracts fit.
    restart tests. Unknown enqueue outcomes must remain non-replayable unless exact
    native evidence supports reconciliation; a shared message ID alone is insufficient.
 
+Implementation follow-up: retain and drain the Hermes submission stream while
+execution is active. Live rollout testing on 2026-09-21 found cancellation/failure
+on early disconnect despite the earlier timing-specific probe success. Saving
+a remote handle permits exact reconciliation; it does not guarantee that the peer
+keeps executing after its stream closes. See the [live report](testing-report-v0.6.0b1.md).
+
 Preserve the legacy distribution, tools, state files, and safety boundaries until
 a versioned migration is implemented. No existing database is rewritten by this
 decision. Full release validation and clean-install CI remain required when code

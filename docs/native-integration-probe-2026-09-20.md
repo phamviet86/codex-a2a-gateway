@@ -1,5 +1,11 @@
 # Native Desktop integration probe — 2026-09-20
 
+> Implementation follow-up on 2026-09-21 found that the deployed Hermes stream
+> handler can fail tasks with `[client disconnected]` when the client closes SSE
+> early. The successful early-close experiment below was timing dependent and
+> must not be generalized into a transport contract. See the
+> [v0.6 live validation report](testing-report-v0.6.0b1.md).
+
 > Updated by the VPS/queue follow-up below: the earlier external-Desktop-wake
 > NO-GO finding is superseded. Native `codex queue` successfully woke the local
 > Desktop test task. Queue deduplication and ambiguous ACK recovery remain gaps.

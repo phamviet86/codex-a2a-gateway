@@ -183,6 +183,18 @@ backups need a matching retention policy and the encryption key. Do not rotate
 an encryption key until pending work and retained data are deliberately migrated
 or expired. Legacy original-prompt retention remains unchanged.
 
+`CODEX_A2A_GATEWAY_BROKER_PEER_TIMEOUT_SECONDS` is the absolute submission-stream
+deadline (default 300 seconds, configurable up to 3600). Set it deliberately for
+long jobs; it is separate from the short MCP inline wait. This Hermes runtime may
+stop execution when its stream disconnects, including broker shutdown or deadline
+expiry. Persisted handles support exact result reconciliation, not a guarantee
+that computation survives a lost connection. Never replay work to conceal that
+failure. Keep active streams drained through terminal status.
+`CODEX_A2A_GATEWAY_BROKER_MAX_CONCURRENT_STREAMS` defaults to four (range 1–32).
+Independent flows may execute concurrently; one flow remains serialized. Reads
+and best-effort cancellation have their own bounded work slots so a quiet
+long-running stream does not block them.
+
 - Exact duplicate operation IDs return the original operation. Conflicting
   content for the same ID is rejected. A new explicit request needs a new ID.
 - An interrupted Hermes dispatch without an exact remote handle remains

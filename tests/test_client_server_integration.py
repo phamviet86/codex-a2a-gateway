@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -62,15 +63,100 @@ class ControlledPeer(FakeA2AServer):
         self.release_completion.set()
         self.received = threading.Event()
         self.messages: list[dict[str, Any]] = []
+        self.abort_on_disconnect = False
+        self.split_terminal_events = False
+        self.split_frames = 0
+        self.premature_disconnect = threading.Event()
+        self._connections = threading.local()
         peer = self
 
         class TaskRegistry(dict[str, dict[str, Any]]):
             def __setitem__(self, key: str, value: dict[str, Any]) -> None:
                 if key in self and value["status"]["state"] == "TASK_STATE_COMPLETED":
                     assert peer.release_completion.wait(20), "fake completion barrier was not released"
+                    connection = getattr(peer._connections, "socket", None)
+                    if peer.abort_on_disconnect and connection is not None:
+                        readable, _, _ = select.select([connection], [], [], 0)
+                        if readable:
+                            try:
+                                closed = connection.recv(1, socket.MSG_PEEK) == b""
+                            except ConnectionResetError:
+                                closed = True
+                            if closed:
+                                peer.premature_disconnect.set()
+                                value = {
+                                    **value,
+                                    "status": {"state": "TASK_STATE_FAILED"},
+                                    "artifacts": [{"parts": [{"text": "[client disconnected]"}]}],
+                                }
                 super().__setitem__(key, value)
 
         self.tasks = TaskRegistry()
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        peer = self
+        base = super()._handler()
+
+        class Handler(base):
+            def do_POST(self) -> None:  # noqa: N802
+                peer._connections.socket = self.connection
+                writer = self.wfile
+
+                class StreamWriter:
+                    def write(self, raw: bytes) -> int:
+                        return writer.write(peer.stream_frame(raw))
+
+                    def flush(self) -> None:
+                        writer.flush()
+
+                self.wfile = StreamWriter()
+                try:
+                    super().do_POST()
+                finally:
+                    self.wfile = writer
+                    del peer._connections.socket
+
+        return Handler
+
+    def stream_frame(self, raw: bytes) -> bytes:
+        if not self.split_terminal_events or not raw.startswith(b"data: "):
+            return raw
+        envelope = json.loads(raw[6:])
+        task = envelope.get("result", {}).get("task")
+        if not task:
+            return raw
+        if task["status"]["state"] != "TASK_STATE_COMPLETED":
+            # The initial handle carries no result; only later artifact events do.
+            envelope["result"]["task"] = {**task, "artifacts": []}
+            return f"data: {json.dumps(envelope)}\n\n".encode()
+        text = task["artifacts"][0]["parts"][0]["text"]
+        middle = len(text) // 2
+        frames = []
+        for index, chunk in enumerate((text[:middle], text[middle:])):
+            event = {
+                "artifactUpdate": {
+                    "taskId": task["id"],
+                    "contextId": task["contextId"],
+                    "artifact": {"artifactId": "split-result", "parts": [{"text": chunk}]},
+                    "append": bool(index),
+                    "lastChunk": bool(index),
+                }
+            }
+            frames.append({**envelope, "result": event})
+        frames.append(
+            {
+                **envelope,
+                "result": {
+                    "statusUpdate": {
+                        "taskId": task["id"],
+                        "contextId": task["contextId"],
+                        "status": task["status"],
+                    }
+                },
+            }
+        )
+        self.split_frames += len(frames)
+        return b"".join(f"data: {json.dumps(frame)}\n\n".encode() for frame in frames)
 
     def _make_task(self, message: dict[str, Any], *, working: bool = False) -> dict[str, Any]:
         self.messages.append(message)
@@ -283,7 +369,7 @@ def postgres_schema() -> Iterator[str]:
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
         try:
-            yield make_conninfo(dsn, options=f"-csearch_path={schema}")
+            yield make_conninfo(dsn, options=f"-csearch_path={schema} -cTimeZone=Asia/Ho_Chi_Minh")
         finally:
             admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
@@ -722,3 +808,64 @@ def test_unknown_read_then_exact_handle_resolution_delivers_final_once(stack: St
     assert stack.peer.submissions == 1
     assert stack.peer.method_counts.get("GetTask", 0) > 0
     assert stack.peer.method_counts.get("ListTasks", 0) == 0
+
+
+@pytest.mark.parametrize("silence_seconds", [0, 11])
+def test_disconnect_sensitive_peer_stream_stays_open_and_other_flow_progresses(
+    stack: Stack, silence_seconds: int
+) -> None:
+    stack.peer.abort_on_disconnect = True
+    stack.peer.release_completion.clear()
+    stack.start_broker()
+    operation_id = str(uuid4())
+    request = {
+        "operation_id": operation_id,
+        "flow_id": str(uuid4()),
+        "prompt": "delayed result disconnect-sensitive peer",
+        "artifact_ids": [],
+    }
+    assert stack.http("POST", "/v1/operations", json=request).status_code == 202
+
+    def saved_handle() -> dict[str, Any]:
+        value = snapshot(stack, operation_id, "running")
+        return value if value.get("remote_task_id") else {}
+
+    eventually(saved_handle)
+    other_id = str(uuid4())
+    other = {**request, "operation_id": other_id, "flow_id": str(uuid4()), "prompt": "independent-flow marker"}
+    assert stack.http("POST", "/v1/operations", json=other).status_code == 202
+    eventually(lambda: snapshot(stack, other_id))
+    assert snapshot(stack, operation_id, "running"), "retained stream must leave other flows responsive"
+    timer = threading.Timer(silence_seconds, stack.peer.release_completion.set)
+    timer.start()
+
+    def terminal() -> dict[str, Any]:
+        value = stack.http("GET", f"/v1/operations/{operation_id}").json()
+        return value if value["state"] not in {"accepted", "running"} else {}
+
+    try:
+        result = eventually(terminal)
+    finally:
+        timer.cancel()
+    assert result["state"] == "completed", result
+    assert result["created_at"].endswith("Z") and result["updated_at"].endswith("Z")
+    assert not stack.peer.premature_disconnect.is_set(), "broker closed SSE before peer completion"
+    assert "disconnect-sensitive peer" in result["result"]["text"]
+    assert stack.peer.submissions == 2
+
+
+def test_stream_artifact_chunks_survive_status_only_terminal_event(stack: Stack) -> None:
+    stack.peer.split_terminal_events = True
+    stack.start_broker()
+    request = {
+        "operation_id": str(uuid4()),
+        "flow_id": str(uuid4()),
+        "prompt": "delayed result split-chunk marker",
+        "artifact_ids": [],
+    }
+    assert stack.http("POST", "/v1/operations", json=request).status_code == 202
+    result = eventually(lambda: snapshot(stack, request["operation_id"]))
+    assert stack.peer.split_frames == 3
+    assert result["result"]["text"] == "fake-marker turn=1 input=" + request["prompt"]
+    assert stack.peer.submissions == 1
+    assert stack.peer.method_counts.get("GetTask", 0) == 0, "terminal stream itself must retain all result content"

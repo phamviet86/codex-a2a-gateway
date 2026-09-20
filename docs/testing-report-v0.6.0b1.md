@@ -1,6 +1,7 @@
 # v0.6.0b1 validation — 2026-09-21
 
-Status: combined source validated; installed-host rollout verification in progress.
+Status: installed-host testing found a stream-lifetime defect; correction and
+reverification are required before publication.
 This report is updated with observed evidence before publication. Historical
 [native probes](native-integration-probe-2026-09-20.md) establish feasibility only,
 not validation of this implementation.
@@ -45,16 +46,25 @@ not prove Desktop wake or model consumption. CI runs fake peers only.
 
 ## Installed-host gates
 
+Live testing exposed a behavior absent from the original fake peer: this Hermes
+build may finalize a task as failed with `[client disconnected]` when the broker
+closes its stream immediately after saving the first remote task ID. One quick
+Desktop inline request passed, while slower probes failed. The native queue
+correctly returned that failure to the originating task, which proves delivery
+routing but does not prove a successful late-result workflow. Failed operations
+were retained and not replayed. The release must retain/drain live streams and
+pass a new delayed-result test before publication.
+
 | Gate | Current evidence |
 | --- | --- |
-| Mac → private VPS TLS | Private CA verified; proxy ready, application rollout pending |
-| Linux clean-wheel install | Pending installed artifact check |
-| Device auth and actual PostgreSQL broker | Pending live application check |
-| Real Hermes execution over HTTPS broker | Pending live application check |
+| Mac → private VPS TLS | PASS: private CA and hostname validation, health 200 |
+| Linux clean-wheel install | PASS: same candidate wheel in a fresh Python 3.11 environment |
+| Device auth and actual PostgreSQL broker | PASS: missing/invalid token 401, authenticated missing operation 404 |
+| Real Hermes execution over HTTPS broker | Inline PASS; delayed execution FAIL due to early stream close |
 | UTF-8 reference file consumed by Hermes | Pending live application check |
-| Current Desktop MCP and native late result | Pending installed client check |
+| Current Desktop MCP and native late result | Five tools discovered; inline result PASS; native queue delivered actual failure, successful late result pending fix |
 | Independent verification of combined release | In progress |
-| GitHub CI and release assets | Pending publication |
+| GitHub CI and release assets | Candidate CI PASS; release blocked on live stream correction |
 
 ## Limits
 

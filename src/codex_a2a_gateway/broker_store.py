@@ -39,7 +39,7 @@ def utcnow() -> datetime:
 
 
 def iso(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def canonical(value: object) -> bytes:

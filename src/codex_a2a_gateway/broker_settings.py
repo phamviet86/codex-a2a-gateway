@@ -33,6 +33,7 @@ class BrokerSettings(BaseModel):
     max_request_bytes: int = Field(default=1048576, ge=1024, le=16777216)
     max_result_bytes: int = Field(default=1048576, ge=1024, le=16777216)
     poll_seconds: float = Field(default=1.0, ge=0.05, le=60)
+    max_concurrent_streams: int = Field(default=4, ge=1, le=32)
     peer_timeout_seconds: float = Field(default=300, ge=1, le=3600)
 
     @model_validator(mode="after")

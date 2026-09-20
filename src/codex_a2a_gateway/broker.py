@@ -106,8 +106,17 @@ class DeviceAuthentication:
 class BrokerDispatcher:
     def __init__(self, store: BrokerStore, peer: Peer, settings: BrokerSettings):
         self.store, self.peer, self.settings = store, peer, settings
+        self._streams: dict[tuple[str, str], asyncio.Task[None]] = {}
+        self._reads: dict[tuple[str, str], asyncio.Task[None]] = {}
+        self._cancels: dict[tuple[str, str], asyncio.Task[None]] = {}
+        self._observations = asyncio.Lock()
+        self._closed = False
 
     async def observe(self, device: str, operation: str, task: A2ATaskResult) -> None:
+        async with self._observations:
+            await self._observe(device, operation, task)
+
+    async def _observe(self, device: str, operation: str, task: A2ATaskResult) -> None:
         await asyncio.to_thread(self.store.save_handle, device, operation, task.task_id)
         if task.state not in FINAL | {"rejected", "input_required"}:
             return
@@ -155,86 +164,150 @@ class BrokerDispatcher:
             self.store.finish, device, operation, task.state, {"text": task.text, "artifacts": descriptors}
         )
 
-    async def step(self) -> None:
-        await asyncio.to_thread(self.store.purge)
-        cancellation = await asyncio.to_thread(self.store.claim_cancel)
-        if cancellation:
-            device, operation, handle = cancellation
-            try:
-                result = await self.peer.cancel(handle)
-                if result.task_id == handle:
-                    await self.observe(device, operation, result)
-            except Exception:
-                # Cancel intent was claimed durably. Never repeat a lost mutation.
-                logger.info("peer cancellation unconfirmed; read-only reconciliation remains available")
-        for saved in await asyncio.to_thread(self.store.reconcilable):
-            try:
-                result = await self.peer.get(saved["remote_task_id"])
-                if result.task_id != saved["remote_task_id"]:
-                    continue
-                await self.observe(saved["device_id"], str(saved["operation_id"]), result)
-            except BrokerError as exc:
-                if exc.code in {
-                    "artifact_too_large",
-                    "artifact_quota",
-                    "unsupported_peer_artifact",
-                    "invalid_peer_artifact",
-                }:
-                    await asyncio.to_thread(
-                        self.store.finish,
-                        saved["device_id"],
-                        str(saved["operation_id"]),
-                        "failed",
-                        None,
-                        exc.code,
-                        exc.message,
-                    )
-            except psycopg.Error:
-                raise
-            except Exception:
-                # GET is read-only; retrying it cannot duplicate execution.
-                continue
-        claim = await asyncio.to_thread(self.store.claim)
-        if claim is None:
-            return
+    async def _unknown(self, device: str, operation: str) -> None:
+        await asyncio.to_thread(
+            self.store.finish,
+            device,
+            operation,
+            "outcome_unknown",
+            None,
+            "submission_unknown",
+            "submission may have started; no automatic resend",
+        )
+
+    async def _submit(self, claim: dict[str, Any]) -> None:
         device, operation = claim["device_id"], claim["operation_id"]
+        terminal_seen = False
         try:
-            # Close the initial stream after persisting its first exact task ID.
-            # Hermes continues upstream; later GETs recover the durable task.
-            async with aclosing(self.peer.submit(claim, self.settings.peer_timeout_seconds)) as stream:
+            # A stream disconnect may stop Hermes. Drain through a definitive
+            # terminal event, saving each handle immediately; never detach at ACK.
+            async with (
+                asyncio.timeout(self.settings.peer_timeout_seconds),
+                aclosing(self.peer.submit(claim, self.settings.peer_timeout_seconds)) as stream,
+            ):
                 async for result in stream:
-                    if result.task_id:
-                        await asyncio.to_thread(self.store.save_handle, device, operation, result.task_id)
-                        # A complete first Task is already authoritative evidence;
-                        # preserve it before closing rather than depend on a later GET.
-                        try:
-                            await self.observe(device, operation, result)
-                        except BrokerError as exc:
-                            await asyncio.to_thread(
-                                self.store.finish, device, operation, "failed", None, exc.code, exc.message
-                            )
-                        break
-                else:
-                    raise BrokerError("missing_handle", "peer stream closed without a task handle", 502)
+                    if not result.task_id:
+                        continue
+                    terminal_seen = result.state in FINAL | {"rejected", "input_required"}
+                    await self.observe(device, operation, result)
+                    if terminal_seen:
+                        return
+            # EOF is not completion, including after receiving a valid handle.
+            await self._unknown(device, operation)
+        except asyncio.CancelledError:
+            await self._unknown(device, operation)
+            raise
+        except psycopg.Error:
+            raise
+        except BrokerError as exc:
+            if terminal_seen and exc.code in {
+                "artifact_too_large",
+                "artifact_quota",
+                "unsupported_peer_artifact",
+                "invalid_peer_artifact",
+                "result_too_large",
+            }:
+                await asyncio.to_thread(self.store.finish, device, operation, "failed", None, exc.code, exc.message)
+            else:
+                await self._unknown(device, operation)
+        except Exception:
+            await self._unknown(device, operation)
+
+    async def _cancel(self, device: str, operation: str, handle: str) -> None:
+        try:
+            async with asyncio.timeout(10):
+                result = await self.peer.cancel(handle)
+            if result.task_id == handle:
+                await self.observe(device, operation, result)
         except psycopg.Error:
             raise
         except Exception:
-            await asyncio.to_thread(
-                self.store.finish,
-                device,
-                operation,
-                "outcome_unknown",
-                None,
-                "submission_unknown",
-                "submission may have started; no automatic resend",
+            # Intent was claimed durably. Never repeat an ambiguous cancellation.
+            logger.info("peer cancellation unconfirmed; read-only reconciliation remains available")
+
+    async def _reconcile(self, device: str, operation: str, handle: str) -> None:
+        try:
+            async with asyncio.timeout(10):
+                result = await self.peer.get(handle)
+            if result.task_id == handle:
+                await self.observe(device, operation, result)
+        except BrokerError as exc:
+            if exc.code in {
+                "artifact_too_large",
+                "artifact_quota",
+                "unsupported_peer_artifact",
+                "invalid_peer_artifact",
+            }:
+                await asyncio.to_thread(self.store.finish, device, operation, "failed", None, exc.code, exc.message)
+        except psycopg.Error:
+            raise
+        except Exception:
+            # Read-only failures can be retried; the mutation is never replayed.
+            return
+
+    async def step(self) -> None:
+        if self._closed:
+            raise RuntimeError("dispatcher is closed")
+        for tasks in (self._streams, self._reads, self._cancels):
+            for key, job in list(tasks.items()):
+                if job.done():
+                    del tasks[key]
+                    job.result()  # Database failure stops dispatch, never reconnects/replays.
+        await asyncio.to_thread(self.store.purge)
+        limit = self.settings.max_concurrent_streams
+        while len(self._cancels) < limit:
+            cancellation = await asyncio.to_thread(self.store.claim_cancel)
+            if cancellation is None:
+                break
+            device, operation, handle = cancellation
+            self._cancels[device, operation] = asyncio.create_task(
+                self._cancel(device, operation, handle),
+                name="broker-cancel",
             )
+        if len(self._reads) < limit:
+            for saved in await asyncio.to_thread(self.store.reconcilable):
+                key = saved["device_id"], str(saved["operation_id"])
+                # Let active streams supply complete artifacts and terminal status.
+                if key in self._streams or key in self._reads or key in self._cancels:
+                    continue
+                self._reads[key] = asyncio.create_task(
+                    self._reconcile(*key, saved["remote_task_id"]),
+                    name="broker-reconcile",
+                )
+                if len(self._reads) >= limit:
+                    break
+        while len(self._streams) < limit:
+            claim = await asyncio.to_thread(self.store.claim)
+            if claim is None:
+                break
+            key = claim["device_id"], claim["operation_id"]
+            self._streams[key] = asyncio.create_task(self._submit(claim), name="broker-submit")
+
+    async def aclose(self) -> None:
+        self._closed = True
+        keys = list(self._streams)
+        jobs = [job for group in (self._streams, self._reads, self._cancels) for job in group.values()]
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
+        # A claimed coroutine can be canceled before its body ever starts.
+        for device, operation in keys:
+            snapshot = await asyncio.to_thread(self.store.get, device, operation)
+            if snapshot["state"] == "running":
+                await self._unknown(device, operation)
+        self._streams.clear()
+        self._reads.clear()
+        self._cancels.clear()
 
     async def run(self) -> None:
         await asyncio.to_thread(self.store.acquire_dispatcher)
         await asyncio.to_thread(self.store.recover)
-        while True:
-            await self.step()
-            await asyncio.sleep(self.settings.poll_seconds)
+        try:
+            while True:
+                await self.step()
+                await asyncio.sleep(self.settings.poll_seconds)
+        finally:
+            await self.aclose()
 
 
 async def bounded_body(request: Request, limit: int) -> bytes:
@@ -281,7 +354,9 @@ def create_broker_app(
             except psycopg.Error:
                 raise RuntimeError("broker ledger initialization failed") from None
         active_ledger = ledger
-        peer_adapter = peer_adapter or HermesBrokerPeer()
+        peer_adapter = peer_adapter or HermesBrokerPeer(
+            max_snapshot_bytes=settings.max_result_bytes + ((settings.max_artifact_bytes + 2) // 3) * 4
+        )
         if dispatch:
             dispatcher = BrokerDispatcher(active_ledger, peer_adapter, settings)
             # Lock and recover before accepting requests, not asynchronously later.
@@ -289,9 +364,12 @@ def create_broker_app(
             await asyncio.to_thread(active_ledger.recover)
 
             async def loop() -> None:
-                while True:
-                    await dispatcher.step()
-                    await asyncio.sleep(settings.poll_seconds)
+                try:
+                    while True:
+                        await dispatcher.step()
+                        await asyncio.sleep(settings.poll_seconds)
+                finally:
+                    await dispatcher.aclose()
 
             worker = asyncio.create_task(loop(), name="broker-dispatcher")
         try:

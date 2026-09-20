@@ -7,6 +7,7 @@
 - Add bounded artifact storage, device quotas, retention, exact operation recovery and per-flow serialization. Preserve legacy commands, seven `hermes_*` tools, inbound Agent Card behavior and existing databases.
 - Add a version/schema-checked native queue adapter and explicit get/wait fallback. Idle wake is version dependent; queue acknowledgement is not proof that the result was consumed. Offline/unloaded host wake and exactly-once delivery are not guaranteed.
 - Add a dedicated PostgreSQL CI job and prerelease publication checks. See the dated v0.6 deployment evidence for actual installed-host validation.
+- Keep Hermes submission streams open through terminal events, retain streamed artifacts, and bound independent stream workers. The broker overrides the legacy 10-second idle read timeout while retaining an explicit absolute deadline; legacy local callers keep their original defaults.
 
 ## 0.5.1 — 2026-09-15
 
