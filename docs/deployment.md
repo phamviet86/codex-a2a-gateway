@@ -1,4 +1,4 @@
-# Deploy the v0.7 client/server gateway
+# Deploy the v0.8 client/server gateway
 
 > Step-by-step Vietnamese guides: [server installation and Hermes usage](server-hermes.vi.md) → [client installation and Codex usage](client-codex.vi.md). This page remains the shared release-installation and operations reference.
 
@@ -41,12 +41,15 @@ if [ -e "$gateway_venv" ]; then
   exit 1
 fi
 release_dir=$(mktemp -d)
-release_url=https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.7.0
-wheel=hermes_a2a_gateway-0.7.0-py3-none-any.whl
-sdist=hermes_a2a_gateway-0.7.0.tar.gz
+release_url=https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.8.0rc1
+wheel=hermes_a2a_gateway-0.8.0rc1-py3-none-any.whl
+sdist=hermes_a2a_gateway-0.8.0rc1.tar.gz
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
 curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
 curl --fail --location --output "$release_dir/SHA256SUMS" "$release_url/SHA256SUMS"
+for asset in hermes-a2a-compat.patch hermes-a2a-compat.json hermes_patch.py; do
+  curl --fail --location --output "$release_dir/$asset" "$release_url/$asset"
+done
 if command -v shasum >/dev/null 2>&1; then
   (cd "$release_dir" && shasum -a 256 -c SHA256SUMS)
 else
@@ -253,3 +256,7 @@ An archived old binary must never run against a newer inbox or ledger.
 ## Managed SSH transport
 
 Set `HERMES_A2A_GATEWAY_CLIENT_TRANSPORT_MODE=ssh-tunnel` and use the [SSH configuration and recovery guide](ssh-tunnel.vi.md). The daemon owns one loopback forward, retains verified HTTPS and device authentication, and reconnects connectivity without blindly replaying agent work. The MCP facade never owns an SSH process.
+
+## Long conversations and actionable errors (0.8)
+
+See the [English AI operating guide](ai-operations.md) and [versioned Hermes compatibility patch](hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.

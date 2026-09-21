@@ -439,3 +439,63 @@ def test_lost_local_ack_lookup_uses_exact_call_not_latest_candidate(settings):
     with pytest.raises(KeyError):
         store.resolve_call(NativeOrigin(native.thread_id, str(uuid4()), native.call_id))
     store.close()
+
+
+def test_diagnostic_snapshot_survives_restart_and_expires(settings):
+    store = ClientStore(settings)
+    native = origin()
+    op = store.create(native, "prompt", [], 0)
+    result = snapshot(store, op, "failed")
+    result["error"] = {
+        "code": "peer_rejected",
+        "message": "peer could not complete the operation",
+        "details": {
+            "reason": "context_rate_limited",
+            "execution_started": False,
+            "retry_after_seconds": 30,
+            "recommended_action": "wait_then_submit_new",
+        },
+    }
+    store.accept_snapshot(result, 2)
+    before = store.view(op, native)
+    store.close()
+    store = ClientStore(settings)
+    assert store.view(op, native)["error"] == before["error"]
+    with store.db:
+        store.db.execute("UPDATE client_operations SET expires=0")
+    store.prune()
+    assert "details" not in (store.view(op, native).get("error") or {})
+    store.close()
+
+
+async def test_doctor_reads_policy_without_submitting(settings):
+    from hermes_a2a_gateway.diagnostics import DIAGNOSTICS_URI
+
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/v1/peer-policy":
+            return httpx.Response(
+                200,
+                json={
+                    "diagnostics_extension": DIAGNOSTICS_URI,
+                    "policy": "sliding_window",
+                    "context_limit": 5,
+                    "window_seconds": 60,
+                },
+            )
+        return httpx.Response(200, json={"ok": True})
+
+    service = ClientService(
+        settings,
+        broker=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://broker.invalid"),
+        delivery=Host(),
+    )
+    try:
+        value = await service.diagnostics()
+        assert value["peer_policy"]["policy"] == "sliding_window"
+        assert all(method == "GET" for method, _ in calls)
+    finally:
+        await service.broker.aclose()
+        service.store.close()

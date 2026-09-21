@@ -1029,3 +1029,65 @@ broker.run_broker()
             await process.wait()
         if process.stderr is not None:
             await process.stderr.read()
+
+
+@pytest.mark.asyncio
+async def test_peer_diagnostics_encrypted_durable_and_expiring(ledger, broker_settings):
+    from hermes_a2a_gateway.diagnostics import DIAGNOSTICS_URI
+
+    request = command()
+    ledger.accept("a", request)
+    dispatcher = BrokerDispatcher(ledger, FakePeer(), broker_settings)
+    rejected = task(
+        state="rejected",
+        text="SECRET peer free form",
+        raw={
+            "metadata": {
+                DIAGNOSTICS_URI: {
+                    "reason": "context_rate_limited",
+                    "execution_started": False,
+                    "retry_after_seconds": 30,
+                    "recommended_action": "wait_then_submit_new",
+                }
+            }
+        },
+    )
+    await dispatcher.observe("a", request["operation_id"], rejected)
+    snapshot = ledger.get("a", request["operation_id"])
+    assert snapshot["error"]["code"] == "peer_rejected"
+    assert snapshot["error"]["details"]["execution_started"] is False
+    assert snapshot["result"] is None and "SECRET" not in json.dumps(snapshot)
+    with ledger.transaction() as conn:
+        row = conn.execute("SELECT error_code,error_message,result_cipher FROM broker_v06_operations").fetchone()
+        assert row["error_code"] == "peer_rejected"
+        assert b"context_rate_limited" not in bytes(row["result_cipher"])
+        assert "SECRET" not in row["error_message"]
+    restarted = BrokerStore(broker_settings)
+    try:
+        assert restarted.get("a", request["operation_id"]) == snapshot
+    finally:
+        restarted.close()
+    with ledger.transaction() as conn:
+        conn.execute("UPDATE broker_v06_operations SET result_expires_at=%s", (utcnow() - timedelta(seconds=1),))
+    assert ledger.get("a", request["operation_id"])["error"]["code"] == "result_expired"
+
+
+async def test_peer_policy_requires_auth_and_has_no_submission(ledger, broker_settings):
+    from hermes_a2a_gateway.diagnostics import DIAGNOSTICS_URI
+
+    class PolicyPeer(FakePeer):
+        async def capabilities(self):
+            return {
+                "diagnostics_extension": DIAGNOSTICS_URI,
+                "policy": "sliding_window",
+                "context_limit": 5,
+                "window_seconds": 60,
+            }
+
+    peer = PolicyPeer()
+    app = create_broker_app(broker_settings, store=ledger, peer=peer, dispatch=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://broker.test") as client:
+        assert (await client.get("/v1/peer-policy")).status_code == 401
+        response = await client.get("/v1/peer-policy", headers={"Authorization": f"Bearer {TOKEN_A}"})
+        assert response.status_code == 200 and response.json()["policy"] == "sliding_window"
+    assert peer.submissions == []

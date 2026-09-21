@@ -22,7 +22,14 @@ VERSION = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml")
 PRERELEASE = bool(re.search(r"(?:a|b|rc)\d+$", VERSION))
 TAG = "v" + VERSION
 REPOSITORY = "phamviet86/hermes-a2a-gateway"
-ASSETS = [f"hermes_a2a_gateway-{VERSION}-py3-none-any.whl", f"hermes_a2a_gateway-{VERSION}.tar.gz", "SHA256SUMS"]
+ASSETS = [
+    f"hermes_a2a_gateway-{VERSION}-py3-none-any.whl",
+    f"hermes_a2a_gateway-{VERSION}.tar.gz",
+    "hermes-a2a-compat.patch",
+    "hermes-a2a-compat.json",
+    "hermes_patch.py",
+    "SHA256SUMS",
+]
 
 
 def require(condition: bool, message: str) -> None:
@@ -134,7 +141,12 @@ def main() -> None:
     if api(f"{prefix}/git/ref/tags/{TAG}", optional=True) is None:
         tag = api(
             f"{prefix}/git/tags",
-            {"tag": TAG, "message": f"{TAG} Hermes client/server and SSH transport", "object": sha, "type": "commit"},
+            {
+                "tag": TAG,
+                "message": f"{TAG} Hermes durable conversations and diagnostics",
+                "object": sha,
+                "type": "commit",
+            },
         )
         api(f"{prefix}/git/refs", {"ref": f"refs/tags/{TAG}", "sha": tag["sha"]})
     verify_tag(prefix, sha)
@@ -148,7 +160,7 @@ def main() -> None:
             "--draft",
             "--prerelease",
             "--title",
-            f"{TAG} — Hermes client/server and SSH transport",
+            f"{TAG} — Hermes durable conversations and diagnostics",
             "--notes-file",
             "docs/release-notes.md",
         )

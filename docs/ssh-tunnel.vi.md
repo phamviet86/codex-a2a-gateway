@@ -131,3 +131,7 @@ kết nối mất phản hồi, còn daemon quản lý restart. [Tài liệu Ope
 
 Không suy ra sleep/wake thực tế hoặc native auto-wake từ một test fake SSH. Ghi rõ
 những trường hợp đã chạy và chưa chạy trong báo cáo triển khai.
+
+## Long conversations and actionable errors (0.8)
+
+See the [English AI operating guide](ai-operations.md) and [versioned Hermes compatibility patch](hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.

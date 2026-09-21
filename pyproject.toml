@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-a2a-gateway"
-version = "0.7.0"
+version = "0.8.0rc1"
 description = "Durable Hermes A2A gateway with a Desktop MCP client and managed SSH transport"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
@@ -68,6 +68,7 @@ include = [
   "/README.vi.md",
   "/SECURITY.md",
   "/docs",
+  "/compat",
   "/pyproject.toml",
   "/scripts",
   "/src",
@@ -101,6 +102,7 @@ skip_covered = true
 [tool.ruff]
 target-version = "py311"
 line-length = 120
+extend-exclude = ["compat/hermes/upstream"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

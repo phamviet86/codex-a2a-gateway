@@ -2,7 +2,7 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Bản phát hành v0.7.0** kết nối Codex Desktop với Hermes trên server riêng,
+**Bản phát hành v0.8.0rc1** kết nối Codex Desktop với Hermes trên server riêng,
 qua MCP, daemon/inbox local và broker PostgreSQL. Client hỗ trợ HTTPS trực tiếp
 qua LAN/VPN hoặc HTTPS bên trong SSH tunnel do daemon quản lý.
 
@@ -78,3 +78,7 @@ Nous Research. Codex Desktop là tích hợp đầu tiên; chưa có adapter cho
 hay API cho Hermes tự tạo task Desktop.
 
 Xem [bằng chứng kiểm thử và triển khai](docs/testing-report-v0.7.0.md).
+
+## Long conversations and actionable errors (0.8)
+
+See the [English AI operating guide](docs/ai-operations.md) and [versioned Hermes compatibility patch](docs/hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.

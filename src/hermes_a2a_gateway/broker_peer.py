@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from .a2a import A2AClient
 from .broker_store import BrokerError, canonical
+from .diagnostics import peer_capabilities
 from .models import A2ATaskResult
 from .settings import Settings
 
@@ -122,6 +123,19 @@ class HermesBrokerPeer:
 
     async def cancel(self, handle: str) -> A2ATaskResult:
         return await self.client.cancel_task(handle)
+
+    async def capabilities(self) -> dict[str, Any]:
+        url = self.client.settings.endpoint.rstrip("/") + "/gateway-capabilities"
+        # Read once, with a small response ceiling; authentication stays on the
+        # already configured loopback client and redirects remain disabled.
+        async with self.client._client.stream("GET", url, timeout=3) as response:
+            response.raise_for_status()
+            content = bytearray()
+            async for chunk in response.aiter_bytes():
+                content.extend(chunk)
+                if len(content) > 8192:
+                    return {"status": "unknown", "policy": "unknown"}
+        return peer_capabilities(json.loads(content))
 
     async def close(self) -> None:
         await self.client.aclose()

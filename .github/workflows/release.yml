@@ -43,13 +43,14 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           test -z "$(git status --porcelain)"
-          python -c 'import tomllib; assert tomllib.load(open("pyproject.toml", "rb"))["project"]["version"].startswith("0.7.0")'
+          python -c 'import tomllib; assert tomllib.load(open("pyproject.toml", "rb"))["project"]["version"].startswith("0.8.0")'
           python -m pip install -e '.[dev]'
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_SHA")"
           python -m build
           python -m twine check dist/*
           python scripts/check_dist.py dist
           python scripts/check_wheel_install.py dist/*.whl
+          python scripts/stage_compat_assets.py dist
           python scripts/write_sha256sums.py dist
           python scripts/write_sha256sums.py --check dist
       - name: Tag, upload draft, download-verify and publish

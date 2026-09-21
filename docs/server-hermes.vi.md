@@ -2,7 +2,7 @@
 
 Tài liệu này dành cho người vận hành một máy chủ riêng chạy Hermes và một hoặc
 nhiều máy Codex Desktop. Nó triển khai nhánh **Codex → Hermes → trả kết quả về
-Codex** của `v0.7.0`:
+Codex** của `v0.8.0rc1`:
 
 ```text
 Codex Desktop → client daemon → HTTPS riêng → broker → Hermes A2A loopback
@@ -26,7 +26,7 @@ Chuẩn bị trước:
 - Một Hermes đang hoạt động dưới một tài khoản Unix riêng, với A2A nội bộ đã xác
   thực và chỉ nghe `127.0.0.1:9900`.
 - PostgreSQL 16 trên cùng máy, một database riêng cho broker.
-- CPython 3.11 và wheel `v0.7.0` đã được xác minh theo
+- CPython 3.11 và wheel `v0.8.0rc1` đã được xác minh theo
   [hướng dẫn cài chung](deployment.md#install-the-same-release-on-both-machines).
 - DNS/private VPN và một reverse proxy TLS có CA được máy Codex tin cậy.
 
@@ -409,3 +409,7 @@ xem ví dụ upload và bài kiểm tra đầu cuối trong [hướng dẫn clie
   và [hướng dẫn A2A của Hermes](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/messaging/a2a.md)
   là nguồn upstream cho `gateway.platforms.a2a`, cổng `9900`, authentication,
   Agent Card, rate limit và timeout.
+
+## Long conversations and actionable errors (0.8)
+
+See the [English AI operating guide](ai-operations.md) and [versioned Hermes compatibility patch](hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.

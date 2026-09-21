@@ -146,7 +146,7 @@ def test_publication_orders_verification_before_publish(
         assert "release upload" not in calls and "release edit" not in calls
     elif mode == "draft":
         publisher.main()
-        assert calls.count("release upload") == 3
+        assert calls.count("release upload") == len(publisher.ASSETS)
         assert calls.index("release download") < calls.index("release edit")
         assert calls[-2].startswith("checksum ") and calls[-1] == "release edit"
     else:
@@ -168,8 +168,10 @@ def test_existing_download_checks_distribution_version(publisher: ModuleType, tm
         info = tarfile.TarInfo("hermes_a2a_gateway-0.5.1/pyproject.toml")
         info.size = len(content)
         archive.addfile(info, io.BytesIO(content))
+    for name in publisher.ASSETS[2:-1]:
+        (tmp_path / name).write_text("compatibility fixture")
     (tmp_path / "SHA256SUMS").write_text(
-        "".join(f"{publisher.digest(tmp_path / name)}  {name}\n" for name in sorted(publisher.ASSETS[:2]))
+        "".join(f"{publisher.digest(tmp_path / name)}  {name}\n" for name in sorted(publisher.ASSETS[:-1]))
     )
     if version == publisher.VERSION:
         publisher.verify_download(tmp_path)

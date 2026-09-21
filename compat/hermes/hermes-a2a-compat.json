@@ -1,0 +1,19 @@
+{
+  "patch_version": "0.8.0",
+  "upstream_commit": "490e6b5966de330285905f52ebaee23c842dc3ea",
+  "files": {
+    "plugins/platforms/a2a/adapter.py": {
+      "original_sha256": "56537e81309a7541cdbce389773c1d85b6a73cb0f0ab96e7e67e6ffb7eb330c9",
+      "patched_sha256": "19cde7692ff4f9e828ae41cd7f2544b74d08514e583dc8762c362f9bc108fa94"
+    },
+    "plugins/platforms/a2a/protocol.py": {
+      "original_sha256": "421d4a4917220caca8f05fb97832ea1c5bef47542f1e0b53b64133b81a4686e4",
+      "patched_sha256": "3778a7c0cecb7c8443db8623794ea8d65b257ca2c9a9249f9878a58fa94b219c"
+    },
+    "plugins/platforms/a2a/security.py": {
+      "original_sha256": "4a335927cb778d3bb30c548482df66983adc203e22bf9b6e259300aed9bc8b83",
+      "patched_sha256": "98da5135f9b181ff96cca46f1b7f49f47c0ba145d87a768d0c3c3d68b2fdad67"
+    }
+  },
+  "patch_sha256": "0052dca113c8160dc7a300178172c9ee290c8b685e2898743cae3619cedaf555"
+}

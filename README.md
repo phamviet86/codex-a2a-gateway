@@ -8,10 +8,11 @@ Hermes A2A Gateway connects Codex Desktop to Hermes on a private server. The cli
 owns a durable local inbox and optional SSH tunnel; the broker owns a PostgreSQL
 ledger and dispatches work to the server's loopback Hermes A2A endpoint.
 
-**Release: v0.7.0.** Package, command and MCP registration are now
-`hermes-a2a-gateway`. The Python namespace is `hermes_a2a_gateway` and configuration
-uses `HERMES_A2A_GATEWAY_*`. This release removes the old local gateway modes,
-legacy executable aliases, setup skills and Hermes → Codex plugin.
+**Candidate: v0.8.0rc1.** Adds structured peer diagnostics and a versioned Hermes
+compatibility patch for long conversations with the same context. The authenticated
+gateway peer uses a five-submission rolling 60-second window instead of a lifetime
+turn cap. Other peers keep their existing policy. No automatic mutation retries.
+Package, command and MCP registration remain `hermes-a2a-gateway`.
 
 ```text
 Codex Desktop -- MCP --> client daemon + SQLite inbox
@@ -118,3 +119,7 @@ python3.11 -m venv .venv
 Tests use fake peers; live model tasks are opt-in and never run in CI. See
 [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md),
 and [SECURITY.md](SECURITY.md). Licensed under [Apache-2.0](LICENSE).
+
+## Long conversations and actionable errors (0.8)
+
+See the [English AI operating guide](docs/ai-operations.md) and [versioned Hermes compatibility patch](docs/hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.

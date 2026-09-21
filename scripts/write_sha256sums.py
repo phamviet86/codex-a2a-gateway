@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write or verify the SHA256SUMS manifest for the two release distributions."""
+"""Write or verify SHA256SUMS for distributions and pinned compatibility assets."""
 
 from __future__ import annotations
 
@@ -23,7 +23,12 @@ def distributions(directory: Path) -> list[Path]:
         or len([item for item in items if item.name.endswith(".tar.gz")]) != 1
     ):
         raise ValueError("expected exactly one wheel and one source distribution")
-    return items
+    extras = [directory / name for name in ("hermes-a2a-compat.patch", "hermes-a2a-compat.json", "hermes_patch.py")]
+    if any(path.exists() for path in extras):
+        if not all(path.is_file() for path in extras):
+            raise ValueError("incomplete Hermes compatibility asset set")
+        items.extend(extras)
+    return sorted(items)
 
 
 def manifest_text(items: list[Path]) -> str:
