@@ -8,7 +8,7 @@ Hermes A2A Gateway connects Codex Desktop to Hermes on a private server. The cli
 owns a durable local inbox and optional SSH tunnel; the broker owns a PostgreSQL
 ledger and dispatches work to the server's loopback Hermes A2A endpoint.
 
-**Candidate: v0.8.0rc1.** Adds structured peer diagnostics and a versioned Hermes
+**Release: v0.8.0.** Adds structured peer diagnostics and a versioned Hermes
 compatibility patch for long conversations with the same context. The authenticated
 gateway peer uses a five-submission rolling 60-second window instead of a lifetime
 turn cap. Other peers keep their existing policy. No automatic mutation retries.
@@ -98,7 +98,7 @@ local repository files are not automatically synchronized.
   from package installation or simulated reconnect tests.
 
 See the [wire contract](docs/client-server-contract.md), [deployment reference](docs/deployment.md),
-[release notes](docs/release-notes.md), [v0.7 verification](docs/testing-report-v0.7.0.md),
+[release notes](docs/release-notes.md), [v0.8 verification](docs/testing-report-v0.8.0.md),
 and [historical evidence](docs/history/README.md).
 
 ## Development

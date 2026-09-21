@@ -41,9 +41,9 @@ if [ -e "$gateway_venv" ]; then
   exit 1
 fi
 release_dir=$(mktemp -d)
-release_url=https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.8.0rc1
-wheel=hermes_a2a_gateway-0.8.0rc1-py3-none-any.whl
-sdist=hermes_a2a_gateway-0.8.0rc1.tar.gz
+release_url=https://github.com/phamviet86/hermes-a2a-gateway/releases/download/v0.8.0
+wheel=hermes_a2a_gateway-0.8.0-py3-none-any.whl
+sdist=hermes_a2a_gateway-0.8.0.tar.gz
 curl --fail --location --output "$release_dir/$wheel" "$release_url/$wheel"
 curl --fail --location --output "$release_dir/$sdist" "$release_url/$sdist"
 curl --fail --location --output "$release_dir/SHA256SUMS" "$release_url/SHA256SUMS"

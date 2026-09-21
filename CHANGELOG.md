@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0 — 2026-09-21
+
+- Promote the verified candidate runtime; retain the same Hermes patch and protocol.
+- Expand Vietnamese operation guides and record installed-host acceptance evidence.
+
 ## 0.8.0rc1
 
 - Preserve bounded, validated peer rejection diagnostics across encrypted storage, events and MCP reads.

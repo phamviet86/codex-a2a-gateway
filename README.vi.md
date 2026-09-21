@@ -2,13 +2,13 @@
 
 [English](README.md) | **Tiếng Việt**
 
-**Bản phát hành v0.8.0rc1** kết nối Codex Desktop với Hermes trên server riêng,
+**Bản phát hành v0.8.0** kết nối Codex Desktop với Hermes trên server riêng,
 qua MCP, daemon/inbox local và broker PostgreSQL. Client hỗ trợ HTTPS trực tiếp
 qua LAN/VPN hoặc HTTPS bên trong SSH tunnel do daemon quản lý.
 
 Tên package, lệnh và đăng ký MCP thống nhất **`hermes-a2a-gateway`**. Namespace
 Python là `hermes_a2a_gateway`, biến môi trường dùng `HERMES_A2A_GATEWAY_*`.
-Bản này đã bỏ các chế độ gateway local cũ, alias executable, setup skill cũ và
+Từ v0.7, sản phẩm đã bỏ các chế độ gateway local cũ, alias executable, setup skill cũ và
 plugin Hermes gọi Codex. Dữ liệu v0.6 được giữ khi di trú; không tự xóa ledger/inbox.
 
 ```text
@@ -77,8 +77,18 @@ việc cài package thành công. Xem [hợp đồng](docs/client-server-contrac
 Nous Research. Codex Desktop là tích hợp đầu tiên; chưa có adapter cho mọi AI agent
 hay API cho Hermes tự tạo task Desktop.
 
-Xem [bằng chứng kiểm thử và triển khai](docs/testing-report-v0.7.0.md).
+Xem [bằng chứng kiểm thử và triển khai v0.8](docs/testing-report-v0.8.0.md).
 
-## Long conversations and actionable errors (0.8)
+## Hội thoại dài và thông báo lỗi trong v0.8
 
-See the [English AI operating guide](docs/ai-operations.md) and [versioned Hermes compatibility patch](docs/hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.
+Đọc [hướng dẫn tiếng Anh dành cho AI](docs/ai-operations.md) và
+[cài đặt/rollback patch Hermes](docs/hermes-compatibility.md).
+Chỉ cài wheel gateway không thay đổi giới hạn hội thoại của Hermes. Kiểm tra
+`client-doctor.peer_policy`: cấu hình đúng trả về `sliding_window`, 5 yêu cầu
+trong 60 giây. Những peer khác giữ chính sách cũ.
+
+Giữ cùng context để tiếp tục hội thoại. Gửi công việc mới bằng `gateway_submit`
+một lần; đọc operation đã gửi bằng `gateway_get` hoặc `gateway_wait`.
+Hỏi Helen tiến độ của task chuyên gia là một yêu cầu mới và vẫn tính vào giới hạn.
+Khi bị giới hạn, đọc `error.details.retry_at`; không tự gửi lại hoặc đổi context
+để né bảo vệ. Kết quả chưa rõ phải được đối chiếu theo operation cũ.
