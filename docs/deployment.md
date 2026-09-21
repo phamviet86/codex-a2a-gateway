@@ -248,6 +248,17 @@ switching their venvs. Keep their stores and key files. Restart, run readiness a
 retrieve a known operation before submitting new work. Never manually reset an
 unknown record or delete the ledger to make a health check pass.
 
+Replacing or terminating the MCP facade can leave existing Desktop tasks holding
+a closed stdio connection, even when `client-doctor` reports a healthy daemon,
+SSH tunnel and broker. A `Transport closed` tool error in that situation requires
+refreshing Desktop's MCP connections, not another broker restart. Use Desktop's
+MCP reload control if available; otherwise finish active work, quit/reopen Desktop,
+and resume the **same task**. Read a known operation with `gateway_get` first.
+Starting a separate `codex app-server` process does not refresh Desktop's connection.
+If a submit returned no handle, reconcile its exact native thread/turn/call identity
+before deciding whether new work is safe. Never replay it just because the transport
+was closed, and do not open another task to bypass an uncertain submission.
+
 Follow [the migration and rollback guide](migration-v0.7.md) for exact cleanup
 boundaries and data-preserving rollback. Keep private backups, but remove old
 operational services and MCP registrations after the new path passes its checks.
