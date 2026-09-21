@@ -132,6 +132,32 @@ Final stable artifact installation and post-restart readback require separate
 post-publication verification in the operator's deployment receipts. This candidate
 acceptance section does not claim those later steps.
 
+## Stable installation and Desktop refresh
+
+[v0.8.0](https://github.com/phamviet86/hermes-a2a-gateway/releases/tag/v0.8.0)
+was published from `bddeabcbc56a3cff3749f509ec3a437834602591` after
+[main CI](https://github.com/phamviet86/hermes-a2a-gateway/actions/runs/35569465384)
+and [publication](https://github.com/phamviet86/hermes-a2a-gateway/actions/runs/35569608765)
+passed. The stable wheel SHA256 is
+`ebb88488cc84ad779374bd91c42b6268674a2502bada4f7e14fb2edff4ff264e`.
+An independent download verified all six assets, the annotated tag and 16 runtime
+files against the release commit.
+
+Both installed hosts match that wheel. Fresh read-only comparisons confirmed all
+86 PostgreSQL operations and all 83 client operations, 13 flows, cursor and 166
+receipts survived, with configuration bytes and native session identities retained.
+Doctor reported verified SSH/TLS/authentication and the active 5/60 policy. The
+Hermes/proxy processes and compatibility patch were unchanged. The installed shared
+receiver guide is version 1.2.1; eight GWS guide artifacts were preserved.
+
+The final tests in existing Desktop tasks returned `Transport closed` after their
+old MCP facade processes were replaced. Exact native thread/turn/call lookup found
+no persisted command for the failed smoke submission; ledger counts did not change.
+No resend occurred. The attempted read of the old rejection also returned no
+snapshot, so post-restart MCP readback and stable application smoke remain pending
+Desktop MCP refresh. Installation/doctor success is not presented as proof of those
+application checks. See the [refresh procedure](deployment.md#upgrade-and-rollback).
+
 ## Limits
 
 Rate protection does not identify causal agent loops. Unknown mutation outcomes

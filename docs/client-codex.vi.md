@@ -277,6 +277,7 @@ lưu operation ở client.
 | `native_metadata_required` | Dùng task Codex host có native MCP metadata; MCP client thông thường hoặc ID do model tự nhập không đủ. |
 | `daemon.unavailable`, lỗi socket | Kiểm tra daemon, launcher và cùng `STATE_DIR`; xem log, chỉ chạy một daemon. Không xóa SQLite/lock để ép chạy process thứ hai. |
 | `daemon.transport_error` khác `null` | Kiểm tra mạng/VPN, URL, CA, token và health server; doctor không tự sửa cấu hình. |
+| `Transport closed` sau khi thay/dừng MCP facade | Task Desktop cũ có thể còn giữ kết nối stdio đã đóng dù doctor báo khỏe. Nạp lại MCP trong Desktop nếu có chức năng này; nếu không, đợi công việc đang chạy kết thúc rồi thoát/mở lại Desktop và quay lại **task gốc**. Đọc operation cũ bằng `gateway_get` trước, không tự gửi lại. |
 | TLS/certificate error | Dùng đúng CA và hostname có trong SAN; không bỏ xác minh TLS. |
 | HTTP 401 | Đối chiếu token trong `client.json` với device token server; cập nhật rồi restart daemon. |
 | Không thấy operation / HTTP 404 | Đối chiếu đúng task gốc, thiết bị, operation ID và thời hạn giữ dữ liệu. Không suy ra cần submit lại. |
@@ -286,6 +287,11 @@ lưu operation ở client.
 | Artifact bị từ chối | Kiểm tra file thường, không symlink, không rỗng, UTF-8 `text/plain`, hạn mức và TTL. |
 
 Xem log macOS trong `~/.local/state/hermes-a2a-gateway/client/daemon.stderr.log`; Linux dùng `journalctl --user -u hermes-a2a-gateway-client.service -n 100 --no-pager`. Log và kết quả có thể nhạy cảm; che thông tin riêng trước khi chia sẻ.
+
+Nếu lần submit báo lỗi transport mà chưa trả handle, phải đối chiếu đúng native
+thread/turn/call để xác định có command nào được lưu hay chưa. Không lấy operation
+mới nhất làm bằng chứng thay thế, không mở task khác để gửi lại. Chạy một tiến trình
+`codex app-server` riêng không chứng minh MCP của Desktop đã được nạp lại.
 
 Restart macOS (sau khi đối chiếu các operation đang chạy):
 
