@@ -195,7 +195,7 @@ class SSHTunnel:
             key: value
             for key, value in os.environ.items()
             if not key.startswith(("CODEX_A2A_GATEWAY_", "HERMES_A2A_GATEWAY_", "CODEX_BRIDGE_", "HERMES_BRIDGE_"))
-            and key != "HERMES_A2A_TOKEN"
+            and key not in {"HERMES_A2A_TOKEN", "A2A_GATEWAY_TOKEN"}
         }
 
     @property

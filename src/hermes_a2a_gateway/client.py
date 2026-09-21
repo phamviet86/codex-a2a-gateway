@@ -435,7 +435,17 @@ class ClientService:
                     await self.broker.get("/v1/operations/00000000-0000-0000-0000-000000000000", timeout=3)
             except (httpx.HTTPError, ValueError):
                 pass
-        return self.health()
+        result = self.health()
+        result["peer_policy"] = {"status": "unknown", "policy": "unknown"}
+        try:
+            response = await self.broker.get("/v1/peer-policy", timeout=4)
+            if response.status_code == 200:
+                from .diagnostics import peer_capabilities
+
+                result["peer_policy"] = peer_capabilities(response.json())
+        except (httpx.HTTPError, ValueError):
+            pass
+        return result
 
 
 def create_client_app(service: ClientService, *, manage_lifecycle: bool = True) -> Starlette:

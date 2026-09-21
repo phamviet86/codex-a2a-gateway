@@ -1,6 +1,6 @@
-# Client/server v0.7 implementation contract
+# Client/server v0.8 implementation contract
 
-Status: v0.7 release, 2026-09-21. This version retains the v0.6
+Status: v0.8 candidate, 2026-09-21. This version retains the v0.6
 client/server ledger contract and removes legacy commands and adapters. It does not claim exactly-once execution or
 delivery. Initial topology: one owner, multiple devices, one broker process,
 PostgreSQL ledger, client SQLite and private HTTPS transport.
@@ -125,3 +125,37 @@ SSH transport is a daemon lifecycle concern, not a new A2A operation. It retains
 device authentication, exact native origin binding, persisted cursors and operation
 identity. SSH reconnect must not imply resending ambiguous Hermes work or native
 queue insertion. Direct mode remains the default. See [SSH transport](ssh-tunnel.vi.md).
+
+## v0.8 structured peer diagnostics and active policy
+
+The existing error envelope retains `code` and `message` and may add `details`.
+Allowed detail fields are `reason`, `peer_state`, `execution_started`,
+`retry_after_seconds`, `retry_at`, and `recommended_action`. Missing fields mean
+unknown, not false or zero. Reason values are `context_rate_limited`,
+`context_turn_limit`, `input_required`, and `peer_rejected`; actions are
+`wait_then_submit_new`, `inspect_operation`, `contact_operator`, and `provide_input`.
+These are hints for a deliberate next action, never automatic mutation retries.
+
+Hermes task metadata uses the versioned diagnostics URI documented in
+[the compatibility guide](hermes-compatibility.md). Broker validation retains
+only bounded known values. Details use an internal envelope in encrypted
+`result_cipher`, are returned as `error.details` with `result=null`, and expire
+with the same result retention. There is no destructive schema migration.
+Free-form peer error text is not copied into plaintext error columns.
+The exact recognized legacy anti-loop message identifies a turn limit but does
+not prove execution did not start or provide an inferred retry time.
+
+Authenticated `GET /v1/peer-policy` reports a sanitized view of the broker's
+credential-specific Hermes capability. `client-doctor.peer_policy` reports
+`status=supported` and `policy=sliding_window` or `legacy_turn_limit` when the
+known contract is available; otherwise status/policy are `unknown`. A supported
+sliding policy includes `context_limit=5` and `window_seconds=60`. Discovery is
+read-only and never submits agent work. No peer URL or credential is exposed.
+
+The pinned patch selects sliding policy using a constant-time server-secret
+check on a loopback request, in addition to existing access/trust checks. In
+localhost-only mode, a correct selector token authenticates this policy choice;
+other local callers retain legacy protection. All policies preserve context and
+session identity. Global peer rate limits still apply.
+
+Local client snapshots keep the existing SQLite result model: restrictive file permissions and retention, not new at-rest snapshot encryption. Broker diagnostic details are encrypted; local snapshots contain only the bounded allowlisted fields, never a newly copied raw peer rejection message.

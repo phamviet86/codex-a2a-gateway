@@ -25,6 +25,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .broker_peer import HermesBrokerPeer
 from .broker_settings import BrokerSettings
 from .broker_store import FINAL, BrokerError, BrokerStore, canonical
+from .diagnostics import peer_error_details
 from .models import A2ATaskResult
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ class BrokerDispatcher:
                 device,
                 operation,
                 "failed",
-                None,
+                {"_gateway_error_details": peer_error_details(task)},
                 "peer_requires_input" if task.state == "input_required" else "peer_rejected",
                 "peer could not complete the operation",
             )
@@ -389,6 +390,18 @@ def create_broker_app(
             return error_response(exc)
         return JSONResponse({"ok": True})
 
+    async def peer_policy(request: Request) -> Response:
+        capability = getattr(peer_adapter, "capabilities", None)
+        value: dict[str, Any] = {"status": "unknown", "policy": "unknown"}
+        if capability is not None:
+            try:
+                async with asyncio.timeout(3):
+                    value = await capability()
+            except Exception:
+                # No raw authentication/transport exception can leave this endpoint.
+                pass
+        return JSONResponse(value, headers={"Cache-Control": "no-store"})
+
     async def accept(request: Request) -> Response:
         raw = await bounded_body(request, settings.max_request_bytes)
         try:
@@ -505,6 +518,7 @@ def create_broker_app(
     app = Starlette(
         routes=[
             Route("/healthz", health),
+            Route("/v1/peer-policy", peer_policy),
             Route("/v1/operations", accept, methods=["POST"]),
             Route("/v1/operations/{operation_id}", get),
             Route("/v1/operations/{operation_id}/cancel", cancel, methods=["POST"]),

@@ -1,0 +1,269 @@
+--- a/plugins/platforms/a2a/adapter.py
++++ b/plugins/platforms/a2a/adapter.py
+@@ -198,6 +198,15 @@
+         agent = route["agent"]
+         subpath = route["subpath"].rstrip("/") or "/"
+         public_url = self._request_public_url() or None
++        if subpath == "/gateway-capabilities":
++            sec = adapter._security_context
++            auth, client_ip = self.headers.get("Authorization"), self._client_ip()
++            identity = sec.authenticate(auth, client_ip)
++            if identity is None or (sec.localhost_only() and not sec.gateway_policy(auth, client_ip)):
++                return self._json(401, {"error": "unauthorized"})
++            if not sec.is_trusted_peer(identity):
++                return self._json(403, {"error": "untrusted peer"})
++            return self._json(200, protocol.gateway_capabilities(sec.gateway_policy(auth, client_ip)))
+         if subpath in ("/.well-known/agent.json", "/.well-known/agent-card.json"):
+             return self._json(200, adapter._build_card(public_url, agent=agent))
+         if subpath == "/metrics":
+@@ -247,10 +256,11 @@
+                     protocol.metrics.rate_limit_triggers += 1
+                 return self._error(http, req_id, code, msg)
+         agent = route["agent"]
++        gateway_policy = adapter._security_context.gateway_policy(self.headers.get("Authorization"), self._client_ip())
+         if handler_name == "_rpc_message_send":
+-            self._json(200, adapter._rpc_message_send(req_id, params, identity, agent=agent, v1_response=is_v1))
++            self._json(200, adapter._rpc_message_send(req_id, params, identity, agent=agent, v1_response=is_v1, gateway_policy=gateway_policy))
+         elif handler_name == "_rpc_message_stream":
+-            adapter._rpc_message_stream(self, req_id, params, identity, agent=agent)
++            adapter._rpc_message_stream(self, req_id, params, identity, agent=agent, gateway_policy=gateway_policy)
+         elif handler_name == "_rpc_tasks_subscribe":
+             adapter._rpc_tasks_subscribe(self, req_id, params, agent=agent)
+         else:  # plain JSON task / push-config queries
+@@ -287,6 +297,7 @@
+         self._watchdog_stop = threading.Event()
+         # Per-adapter protocol state (not module-global).
+         self.tasks, self._turns, self._rate_limiter = protocol.TaskStore(), protocol.TurnTracker(), protocol.RateLimiter()
++        self._gateway_limiter = protocol.GatewayContextLimiter()
+         # Forwarded profile sessions: (profile, agent_slug, context_id) -> session_id.
+         self._profile_sessions: Dict[tuple[str, str, str], str] = {}
+         self._profile_session_locks: Dict[tuple[str, str, str], threading.Lock] = {}
+@@ -519,29 +530,42 @@
+         with self._profile_session_locks_guard:
+             return self._profile_session_locks.setdefault(key, threading.Lock())
+ 
+-    def _end_task(self, rec: dict, state: str, text: str, stored_reply: str = "") -> tuple[dict, None]:
++    def _end_task(self, rec: dict, state: str, text: str, stored_reply: str = "", *, diagnostics: Optional[dict] = None) -> tuple[dict, None]:
+         """Complete a task immediately (rejected / not ready) and build its terminal Task."""
+-        self.tasks.complete(rec["task_id"], state, stored_reply)
++        self.tasks.complete(rec["task_id"], state, text if diagnostics else stored_reply, diagnostics=diagnostics)
+         protocol.metrics.tasks_failed += state == protocol.STATE_FAILED
+-        return protocol.build_task(rec["task_id"], rec["context_id"], state, text, created_at=rec["created_iso"]), None
+-
+-    def _prepare_task(self, params: dict, peer: str, agent: Optional[dict] = None) -> tuple[Optional[dict], Optional[dict]]:
++        task = protocol.build_task(rec["task_id"], rec["context_id"], state, text, created_at=rec["created_iso"])
++        if diagnostics:
++            task["metadata"] = {protocol.GATEWAY_DIAGNOSTICS: dict(diagnostics)}
++        return task, None
++
++    def _prepare_task(self, params: dict, peer: str, agent: Optional[dict] = None, *, gateway_policy: bool = False) -> tuple[Optional[dict], Optional[dict]]:
+         """Validate, register, and dispatch an inbound message (HTTP worker thread). Returns
+         (terminal_task, None) when it ends immediately, else (None, pending) with the future to wait on."""
+         agent = agent or self._agents[""]
+         text = protocol.extract_text(params)
+         context_id = protocol.extract_context_id(params) or protocol.new_context_id()
+         task_id = protocol.new_task_id()
+-        turn = self._turns.track(context_id)
+-        max_turns = protocol.max_pingpong_turns()
+         rec = self.tasks.create(task_id, context_id, peer, *self._scope_for_agent(agent))
+-        if turn > max_turns:
+-            protocol.metrics.anti_loop_triggers += 1
+-            logger.warning("A2A: anti-loop triggered for context %s (turn %d > %d)", context_id, turn, max_turns)
+-            return self._end_task(rec, protocol.STATE_REJECTED, f"Anti-loop protection: context {context_id} exceeded "
+-                                  f"{max_turns} turns. Start a new context or increase A2A_MAX_PINGPONG_TURNS.")
+         if not text:
+             return self._end_task(rec, protocol.STATE_REJECTED, "Empty task — nothing to do.")
++        if gateway_policy:
++            diagnostic = self._gateway_limiter.admit(peer, self._scope_for_agent(agent), context_id)
++            if diagnostic:
++                protocol.metrics.rate_limit_triggers += 1
++                return self._end_task(rec, protocol.STATE_REJECTED,
++                                      "Context submission rate limit reached; wait before a new explicit submission.",
++                                      diagnostics=diagnostic)
++        else:
++            turn = self._turns.track(context_id)
++            max_turns = protocol.max_pingpong_turns()
++            if turn > max_turns:
++                protocol.metrics.anti_loop_triggers += 1
++                logger.warning("A2A: anti-loop triggered for context %s (turn %d > %d)", context_id, turn, max_turns)
++                return self._end_task(rec, protocol.STATE_REJECTED,
++                                      "Context total-turn limit reached; ask the operator to review peer policy.",
++                                      diagnostics={"reason": "context_turn_limit", "peer_state": "rejected",
++                                                   "execution_started": False, "recommended_action": "contact_operator"})
+         framed = security.wrap_inbound(peer, text)
+         security.audit("inbound", peer, task_id, text)
+         protocol.persist_message(context_id, "user", text, task_id)
+@@ -660,8 +684,8 @@
+         return self._await_future(pending["future"], pending["started"] + _reply_timeout(), keepalive,
+                                   (protocol.STATE_FAILED, "[agent did not reply in time]"))
+ 
+-    def _rpc_message_send(self, req_id: Any, params: dict, peer: str, agent: Optional[dict] = None, v1_response: bool = False) -> dict:
+-        task, pending = self._prepare_task(params, peer, agent=agent)
++    def _rpc_message_send(self, req_id: Any, params: dict, peer: str, agent: Optional[dict] = None, v1_response: bool = False, *, gateway_policy: bool = False) -> dict:
++        task, pending = self._prepare_task(params, peer, agent=agent, gateway_policy=gateway_policy)
+         if task is None:
+             state, reply = self._finalize_task(pending, *self._await_reply(pending))
+             task = protocol.build_task(pending["task_id"], pending["context_id"], state, reply, created_at=pending["created_iso"])
+@@ -690,18 +714,23 @@
+         completed = bool(reply) and state == protocol.STATE_COMPLETED
+         events = ([protocol.artifact_update(task_id, context_id, reply)] if completed else []) + [
+             protocol.status_update(task_id, context_id, state, "" if completed else reply)]
++        rec = self.tasks.get(task_id) or {}
++        diagnostic = rec.get("gateway_diagnostics")
+         for ev in events:
++            if diagnostic and "statusUpdate" in ev:
++                ev["statusUpdate"]["metadata"] = {protocol.GATEWAY_DIAGNOSTICS: dict(diagnostic)}
+             self._sse_write(handler, protocol.sse_data(ev, req_id))
+         self._sse_write(handler, protocol.sse_done())
+ 
+-    def _rpc_message_stream(self, handler, req_id: Any, params: dict, peer: str, agent: Optional[dict] = None) -> None:
++    def _rpc_message_stream(self, handler, req_id: Any, params: dict, peer: str, agent: Optional[dict] = None, *, gateway_policy: bool = False) -> None:
+         """message/stream as an SSE response of JSON-RPC-wrapped StreamResponse events (§9.4)."""
+         protocol.metrics.streams_started += 1
+         self._sse_headers(handler)
+         pending = None
+         try:
+-            terminal, pending = self._prepare_task(params, peer, agent=agent)
++            terminal, pending = self._prepare_task(params, peer, agent=agent, gateway_policy=gateway_policy)
+             if terminal is not None:
++                self._sse_write(handler, protocol.sse_data(protocol.stream_task(terminal), req_id))
+                 return self._emit_terminal(handler, terminal["id"], terminal["contextId"], terminal["status"]["state"],
+                                            protocol.extract_text(terminal.get("status", {}).get("message", {}) or {}), req_id=req_id)
+             task_id, context_id = pending["task_id"], pending["context_id"]
+@@ -723,6 +752,7 @@
+             return handler._json(200, error)
+         self._sse_headers(handler)
+         try:
++            self._sse_write(handler, protocol.sse_data(protocol.stream_task(protocol.TaskStore.to_task(rec)), req_id))
+             if (fut := self.tasks.watch(task_id, *self._scope_for_agent(agent))) is None:
+                 return self._sse_write(handler, protocol.sse_done())
+             state, reply = self._await_future(fut, time.time() + _reply_timeout(), self._keepalive(handler),
+--- a/plugins/platforms/a2a/protocol.py
++++ b/plugins/platforms/a2a/protocol.py
+@@ -6,6 +6,7 @@
+ from __future__ import annotations
+ 
+ import json
++import math
+ import os
+ import threading
+ import time
+@@ -20,6 +21,47 @@
+ from hermes_constants import get_hermes_home
+ 
+ PROTOCOL_VERSION = "1.0"
++GATEWAY_DIAGNOSTICS = "https://github.com/phamviet86/hermes-a2a-gateway/extensions/diagnostics/v1"
++
++
++def gateway_capabilities(selected: bool) -> dict:
++    return {"diagnostics_extension": GATEWAY_DIAGNOSTICS, "patch_version": "0.8.0",
++            "policy": "sliding_window" if selected else "legacy_turn_limit",
++            "context_limit": 5 if selected else max_pingpong_turns(),
++            **({"window_seconds": 60} if selected else {})}
++
++
++class GatewayContextLimiter:
++    """Five accepted submissions per 60s, by authenticated peer/agent/context.
++
++    Process-local like the existing global limiter. Rejections and reads do not
++    extend the window. This is rate protection, not causal loop detection.
++    """
++    def __init__(self, clock=time.monotonic, wall_clock=time.time):
++        self._clock, self._wall_clock = clock, wall_clock
++        self._buckets = {}
++        self._lock = threading.Lock()
++
++    def admit(self, peer: str, scope: tuple[str, str], context: str) -> Optional[dict]:
++        with self._lock:
++            now = self._clock()
++            for key in list(self._buckets):
++                bucket = self._buckets[key]
++                while bucket and bucket[0] <= now - 60:
++                    bucket.popleft()
++                if not bucket:
++                    del self._buckets[key]
++            key = (peer, *scope, context)
++            bucket = self._buckets.setdefault(key, deque())
++            if len(bucket) >= 5:
++                delay = max(1, math.ceil(bucket[0] + 60 - now))
++                retry_at = datetime.fromtimestamp(self._wall_clock() + delay, timezone.utc).isoformat()
++                return {"reason": "context_rate_limited", "peer_state": "rejected",
++                        "execution_started": False, "retry_after_seconds": delay,
++                        "retry_at": retry_at, "recommended_action": "wait_then_submit_new"}
++            bucket.append(now)
++        return None
++
+ 
+ # A2A v1.0 task lifecycle states + message roles.
+ STATE_SUBMITTED, STATE_WORKING, STATE_INPUT_REQUIRED = "TASK_STATE_SUBMITTED", "TASK_STATE_WORKING", "TASK_STATE_INPUT_REQUIRED"
+@@ -70,7 +112,8 @@
+         "provider": {"organization": os.getenv("A2A_PROVIDER_ORG", "Hermes Agent"), "url": os.getenv("A2A_PROVIDER_URL", "") or url},
+         "supportedInterfaces": [iface],
+         "capabilities": {"streaming": streaming, "pushNotifications": push_notifications,
+-                         "stateTransitionHistory": False, "extendedAgentCard": False},
++                         "stateTransitionHistory": False, "extendedAgentCard": False,
++                         "extensions": [{"uri": GATEWAY_DIAGNOSTICS, "required": False}]},
+         "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"], "skills": skills or [],
+     }
+     if auth_required:
+@@ -367,13 +410,15 @@
+         with self._lock:
+             return dict(rec) if (rec := self._scoped(task_id, agent_slug, tenant)) else None
+ 
+-    def complete(self, task_id: str, state: str, reply: str = "") -> Optional[dict]:
++    def complete(self, task_id: str, state: str, reply: str = "", *, diagnostics: Optional[dict] = None) -> Optional[dict]:
+         """Transition a task to a terminal state. Idempotent."""
+         with self._lock:
+             rec = self._tasks.get(task_id)
+             if not rec or rec["state"] in TERMINAL_STATES:
+                 return None
+             rec.update(state=state, reply=reply, completed_at=time.time())
++            if diagnostics is not None:
++                rec["gateway_diagnostics"] = dict(diagnostics)
+             watchers = self._watchers.pop(task_id, [])
+             self._trim_locked()
+             out = dict(rec)
+@@ -425,6 +470,8 @@
+         """Render a stored record as an A2A v1.0 Task."""
+         task = build_task(rec["task_id"], rec["context_id"], rec["state"], rec.get("reply", ""),
+                           created_at=rec.get("created_iso", ""))
++        if rec.get("gateway_diagnostics"):
++            task["metadata"] = {GATEWAY_DIAGNOSTICS: dict(rec["gateway_diagnostics"])}
+         if not include_artifacts:
+             task.pop("artifacts", None)
+         return task
+--- a/plugins/platforms/a2a/security.py
++++ b/plugins/platforms/a2a/security.py
+@@ -61,11 +61,12 @@
+     allow_all_users: bool
+     requested_host: str
+     push_secret: str
++    gateway_token: str = ""
+ 
+     @classmethod
+     def capture(cls) -> "A2ASecurityContext":
+         bearer_token = _startup_env("A2A_BEARER_TOKEN")
+-        return cls(bearer_token=bearer_token, peer_tokens=tuple(_parse_peer_tokens(_startup_env("A2A_PEER_TOKENS")).items()),
++        return cls(gateway_token=_startup_env("A2A_GATEWAY_TOKEN"), bearer_token=bearer_token, peer_tokens=tuple(_parse_peer_tokens(_startup_env("A2A_PEER_TOKENS")).items()),
+                    trusted_peers=_configured_trusted_peers(),
+                    allow_all_users=_startup_env("A2A_ALLOW_ALL_USERS").lower() in {"1", "true", "yes"},
+                    requested_host=_startup_env("A2A_HOST") or "127.0.0.1", push_secret=_startup_env("A2A_PUSH_SECRET") or bearer_token)
+@@ -98,6 +99,18 @@
+         if self.bearer_token and hmac.compare_digest(presented, self.bearer_token):
+             return f"ip:{client_ip or 'unknown'}"
+         return None
++
++    def gateway_policy(self, auth_header: Optional[str], client_ip: str) -> bool:
++        """Opt-in credential policy; never changes the authenticated session identity."""
++        try:
++            local = ipaddress.ip_address(client_ip).is_loopback
++        except ValueError:
++            local = False
++        parts = (auth_header or "").split(None, 1)
++        return bool(local and self.gateway_token
++                    and self.authenticate(auth_header, client_ip) is not None
++                    and len(parts) == 2 and parts[0].lower() == "bearer"
++                    and hmac.compare_digest(parts[1].strip(), self.gateway_token))
+ 
+     def is_trusted_peer(self, identity: str) -> bool:
+         """Open when allow-all or localhost-only; else the allow-list (if any) must contain identity."""

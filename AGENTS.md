@@ -107,3 +107,13 @@ Removal/upgrade plans identify exact owned installations, back up data and keys,
 check interpreter dependencies, stop writers before consistent copy, and preserve a
 rollback path. Do not remove Hermes, Codex, PostgreSQL, provider authentication,
 unrelated SSH tunnels, user workspaces or shared runtimes as gateway cleanup.
+
+## Hermes compatibility assets
+
+`compat/hermes` owns the exact-commit upstream patch and licensed test fixtures.
+Do not format or modify vendored originals; their hashes are compatibility gates.
+`A2A_GATEWAY_TOKEN` is a protected Hermes-side policy selector, not a substitute
+for existing remote authentication or trust checks. Preserve peer/context/session identities. Validate
+structured diagnostics; never place arbitrary peer text into plaintext error columns.
+Stage compatibility assets with `scripts/stage_compat_assets.py` before writing
+release checksums. Package tests must exercise the patch offline against pinned source.

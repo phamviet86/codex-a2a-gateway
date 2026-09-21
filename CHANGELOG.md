@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0rc1
+
+- Preserve bounded, validated peer rejection diagnostics across encrypted storage, events and MCP reads.
+- Report credential-selected Hermes policy in client doctor; clarify submit-versus-observe instructions.
+- Ship a pinned Hermes patch for authenticated gateway conversations: five accepted submissions per rolling minute, no lifetime turn cap, no automatic resend.
+- Keep existing contexts, identities, ledgers, TLS/SSH and native delivery semantics.
+- Add AI-facing guidance and explicit compatibility patch installation/rollback assets.
+
 ## [0.7.0] — 2026-09-21
 
 - Promote the client/server-only Hermes gateway after installed Mac/VPS SSH recovery and native Desktop result-consumption verification.

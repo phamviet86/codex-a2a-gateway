@@ -147,6 +147,9 @@ class BrokerStore:
         error = {"code": row["error_code"], "message": row["error_message"]} if row["error_code"] else None
         if row["result_cipher"] is not None and row["result_expires_at"] > utcnow():
             result = self._decrypt(row["result_cipher"])
+            if error is not None and "_gateway_error_details" in result:
+                error["details"] = result["_gateway_error_details"]
+                result = None
         elif row["result_expires_at"] is not None and row["result_expires_at"] <= utcnow():
             error = {"code": "result_expired", "message": "result retention period has expired"}
         return {

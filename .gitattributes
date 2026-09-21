@@ -1,4 +1,2 @@
-* text=auto eol=lf
-*.sh text eol=lf
-*.py text eol=lf
-*.md text eol=lf
+# Unified-diff context lines representing blank source lines contain one space.
+compat/hermes/*.patch whitespace=-blank-at-eol
