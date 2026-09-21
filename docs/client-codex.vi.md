@@ -1,6 +1,6 @@
 # Client: cài đặt và sử dụng với Codex Desktop
 
-Hướng dẫn này dành cho **v0.8.0rc1 client/server** của Hermes A2A Gateway. Codex trên máy cá nhân giao việc cho Hermes trên server; daemon giữ inbox local và lấy kết quả qua HTTPS/SSE. Package, lệnh và đăng ký MCP thống nhất tên `hermes-a2a-gateway`.
+Hướng dẫn này dành cho **v0.8.0 client/server** của Hermes A2A Gateway. Codex trên máy cá nhân giao việc cho Hermes trên server; daemon giữ inbox local và lấy kết quả qua HTTPS/SSE. Package, lệnh và đăng ký MCP thống nhất tên `hermes-a2a-gateway`.
 
 ```text
 Codex Desktop → MCP client-mcp → daemon + SQLite → HTTPS/SSE → server → Hermes
@@ -17,7 +17,7 @@ Làm [hướng dẫn server](server-hermes.vi.md) trước, sau đó làm các b
 - Server đã sẵn sàng. Nhận ba thông tin qua kênh quản trị được xác thực: **HTTPS origin** (ví dụ `https://gateway.example.internal:9443`, không thêm `/v1`), **device token riêng cho máy này**, và **CA certificate** nếu server dùng CA riêng. Không nhận private key TLS hoặc encryption key của broker.
 - Máy client phải truy cập được mạng riêng/VPN của server, và hostname/IP trong URL phải khớp SAN của chứng chỉ. Không dùng `curl -k` hoặc tắt kiểm tra TLS.
 
-Wheel v0.7 đã qua cài sạch trên macOS và Linux trong CI. Candidate được cài từ GitHub và kiểm chứng thêm trên Mac/VPS. Luồng kết quả muộn đã được kiểm chứng trên macOS; không suy ra mọi bản Desktop hoặc Linux có hành vi wake giống nhau. Client dùng Unix socket, chưa hỗ trợ Windows. Adapter v0.8.0rc1 chỉ cho phép CLI `0.154.0` và `0.155.0-alpha.9.2`, đồng thời kiểm tra schema queue; ngoài danh sách đó sẽ dùng cơ chế lấy kết quả chủ động nếu host vẫn cung cấp native MCP metadata. Xem [bằng chứng v0.7](testing-report-v0.7.0.md) và [các phiên bản đã kiểm chứng trước đó](history/testing-report-v0.6.0b1.md).
+CI kiểm tra cài wheel sạch trên macOS và Linux. Bản v0.8 được kiểm chứng thêm từ artifact GitHub trên Mac/VPS. Luồng kết quả muộn đã được kiểm chứng trên macOS; không suy ra mọi bản Desktop hoặc Linux có hành vi wake giống nhau. Client dùng Unix socket, chưa hỗ trợ Windows. Adapter v0.8.0 chỉ cho phép CLI `0.154.0` và `0.155.0-alpha.9.2`, đồng thời kiểm tra schema queue; ngoài danh sách đó sẽ dùng cơ chế lấy kết quả chủ động nếu host vẫn cung cấp native MCP metadata. Xem [bằng chứng v0.8](testing-report-v0.8.0.md) và [các phiên bản đã kiểm chứng trước đó](history/testing-report-v0.6.0b1.md).
 
 Tìm CLI trong terminal. Đường dẫn bundle phụ thuộc tên ứng dụng thực tế:
 
@@ -307,6 +307,16 @@ launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.hermes.a2a.gate
 
 Giữ state, config/key và wheel đã kiểm tra checksum để phục hồi. Không chạy binary legacy trên store v0.7. Xem [nâng cấp, rollback và giới hạn](deployment.md#upgrade-and-rollback) trước khi thay phiên bản; không nâng cấp venv trong khi daemon đang sử dụng nó.
 
-## Long conversations and actionable errors (0.8)
+## Hội thoại dài và thông báo lỗi trong v0.8
 
-See the [English AI operating guide](ai-operations.md) and [versioned Hermes compatibility patch](hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.
+Đọc [hướng dẫn tiếng Anh dành cho AI](ai-operations.md) và
+[cài đặt/rollback patch Hermes](hermes-compatibility.md).
+Chỉ cài wheel gateway không thay đổi giới hạn hội thoại của Hermes. Kiểm tra
+`client-doctor.peer_policy`: cấu hình đúng trả về `sliding_window`, 5 yêu cầu
+trong 60 giây. Những peer khác giữ chính sách cũ.
+
+Giữ cùng context để tiếp tục hội thoại. Gửi công việc mới bằng `gateway_submit`
+một lần; đọc operation đã gửi bằng `gateway_get` hoặc `gateway_wait`.
+Hỏi Helen tiến độ của task chuyên gia là một yêu cầu mới và vẫn tính vào giới hạn.
+Khi bị giới hạn, đọc `error.details.retry_at`; không tự gửi lại hoặc đổi context
+để né bảo vệ. Kết quả chưa rõ phải được đối chiếu theo operation cũ.

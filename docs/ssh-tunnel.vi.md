@@ -132,6 +132,16 @@ kết nối mất phản hồi, còn daemon quản lý restart. [Tài liệu Ope
 Không suy ra sleep/wake thực tế hoặc native auto-wake từ một test fake SSH. Ghi rõ
 những trường hợp đã chạy và chưa chạy trong báo cáo triển khai.
 
-## Long conversations and actionable errors (0.8)
+## Hội thoại dài và thông báo lỗi trong v0.8
 
-See the [English AI operating guide](ai-operations.md) and [versioned Hermes compatibility patch](hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.
+Đọc [hướng dẫn tiếng Anh dành cho AI](ai-operations.md) và
+[cài đặt/rollback patch Hermes](hermes-compatibility.md).
+Chỉ cài wheel gateway không thay đổi giới hạn hội thoại của Hermes. Kiểm tra
+`client-doctor.peer_policy`: cấu hình đúng trả về `sliding_window`, 5 yêu cầu
+trong 60 giây. Những peer khác giữ chính sách cũ.
+
+Giữ cùng context để tiếp tục hội thoại. Gửi công việc mới bằng `gateway_submit`
+một lần; đọc operation đã gửi bằng `gateway_get` hoặc `gateway_wait`.
+Hỏi Helen tiến độ của task chuyên gia là một yêu cầu mới và vẫn tính vào giới hạn.
+Khi bị giới hạn, đọc `error.details.retry_at`; không tự gửi lại hoặc đổi context
+để né bảo vệ. Kết quả chưa rõ phải được đối chiếu theo operation cũ.

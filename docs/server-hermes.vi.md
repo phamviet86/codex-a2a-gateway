@@ -2,7 +2,7 @@
 
 Tài liệu này dành cho người vận hành một máy chủ riêng chạy Hermes và một hoặc
 nhiều máy Codex Desktop. Nó triển khai nhánh **Codex → Hermes → trả kết quả về
-Codex** của `v0.8.0rc1`:
+Codex** của `v0.8.0`:
 
 ```text
 Codex Desktop → client daemon → HTTPS riêng → broker → Hermes A2A loopback
@@ -26,7 +26,7 @@ Chuẩn bị trước:
 - Một Hermes đang hoạt động dưới một tài khoản Unix riêng, với A2A nội bộ đã xác
   thực và chỉ nghe `127.0.0.1:9900`.
 - PostgreSQL 16 trên cùng máy, một database riêng cho broker.
-- CPython 3.11 và wheel `v0.8.0rc1` đã được xác minh theo
+- CPython 3.11 và wheel `v0.8.0` đã được xác minh theo
   [hướng dẫn cài chung](deployment.md#install-the-same-release-on-both-machines).
 - DNS/private VPN và một reverse proxy TLS có CA được máy Codex tin cậy.
 
@@ -410,6 +410,34 @@ xem ví dụ upload và bài kiểm tra đầu cuối trong [hướng dẫn clie
   là nguồn upstream cho `gateway.platforms.a2a`, cổng `9900`, authentication,
   Agent Card, rate limit và timeout.
 
-## Long conversations and actionable errors (0.8)
+## Hội thoại dài và thông báo lỗi trong v0.8
 
-See the [English AI operating guide](ai-operations.md) and [versioned Hermes compatibility patch](hermes-compatibility.md). The gateway wheel alone does not remove the receiver's legacy conversation limit. Verify the authenticated peer policy with `client-doctor`. Keep the same context, observe existing operations with get/wait, and never blindly resend ambiguous work.
+Đọc [hướng dẫn tiếng Anh dành cho AI](ai-operations.md) và
+[cài đặt/rollback patch Hermes](hermes-compatibility.md).
+Chỉ cài wheel gateway không thay đổi giới hạn hội thoại của Hermes. Kiểm tra
+`client-doctor.peer_policy`: cấu hình đúng trả về `sliding_window`, 5 yêu cầu
+trong 60 giây. Những peer khác giữ chính sách cũ.
+
+Giữ cùng context để tiếp tục hội thoại. Gửi công việc mới bằng `gateway_submit`
+một lần; đọc operation đã gửi bằng `gateway_get` hoặc `gateway_wait`.
+Hỏi Helen tiến độ của task chuyên gia là một yêu cầu mới và vẫn tính vào giới hạn.
+Khi bị giới hạn, đọc `error.details.retry_at`; không tự gửi lại hoặc đổi context
+để né bảo vệ. Kết quả chưa rõ phải được đối chiếu theo operation cũ.
+
+### Nâng cấp Hermes để dùng chính sách mới
+
+Release cung cấp patch, manifest và utility riêng; chỉ hỗ trợ đúng commit Hermes
+được ghi trong manifest. Tải và xác minh tất cả asset trước khi chạy. Utility
+`hermes_patch.py check --root "$HERMES_CHECKOUT"` phải đạt trước bước apply.
+Dừng nhận việc mới, đợi công việc đang chạy hoàn tất và sao lưu nhất quán trước
+khi dừng service để áp dụng patch. Giữ nguyên context/session, khóa và database.
+
+Cấu hình riêng phía Hermes `A2A_GATEWAY_TOKEN` khớp credential broker dùng ở
+`HERMES_A2A_TOKEN`. Với cài đặt localhost-only chưa có token, cấp một secret mới
+cho cặp này, giữ nguyên chế độ truy cập cũ của những caller local khác. Nếu đã có
+xác thực Hermes, credential vẫn phải vượt xác thực và trust policy hiện có.
+Không đưa secret vào tài liệu, lệnh mẫu chứa giá trị thật hoặc lời nhắc cho AI.
+
+Khởi động Hermes trước, rồi broker và client. Kiểm tra doctor và mapping session
+trước khi chạy smoke test. Đây là giới hạn tốc độ, không phải cơ chế phát hiện
+mọi vòng lặp giữa các agent; không vô hiệu hóa các phê duyệt công cụ của Hermes.

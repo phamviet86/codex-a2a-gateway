@@ -16,7 +16,7 @@ identity remain unchanged; the guard is not a general detector of agent call loo
 
 Alongside the wheel and source archive, download `hermes-a2a-compat.patch`,
 `hermes-a2a-compat.json`, `hermes_patch.py` and `SHA256SUMS` from the same release.
-Verify every asset against the manifest before execution. The JSON manifest pins
+Verify the downloaded assets against `SHA256SUMS` before execution. The JSON manifest pins
 the upstream commit and the original/patched file hashes. The installer must
 refuse unknown source, conflicting edits and partial application; an already
 matching installation is reported without applying it twice.
@@ -34,7 +34,8 @@ python3 hermes_patch.py apply --root "$HERMES_CHECKOUT"
 ```
 
 Keep the patch, JSON manifest and utility together. `HERMES_CHECKOUT` is an
-operator-resolved path, not a model-supplied target. Apply only after check succeeds. Restore services in server-first order and
+operator-resolved path, not a model-supplied target. Apply only after check succeeds.
+Restore services in server-first order and
 verify `client-doctor` reports the selected credential's active peer policy.
 
 ## Credential selection
